@@ -1,0 +1,44 @@
+{
+  "name": "vedadb",
+  "version": "0.2.0",
+  "description": "Official Node.js driver for VedaDB - The Multi-Model Database Engine",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node tests/test_client.js",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "vedadb",
+    "database",
+    "multi-model",
+    "sql",
+    "nosql",
+    "cache",
+    "search",
+    "driver",
+    "client",
+    "tcp"
+  ],
+  "author": "VedaDB Contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vedadb/vedadb.git",
+    "directory": "drivers/node"
+  },
+  "homepage": "https://github.com/vedadb/vedadb/tree/main/drivers/node#readme",
+  "bugs": {
+    "url": "https://github.com/vedadb/vedadb/issues"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

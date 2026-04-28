@@ -1,0 +1,257 @@
+# drivers/conformance/suite.yaml — shared driver conformance test manifest.
+#
+# Phase 0.5.1 of the VedaDB 0.3→1.0 roadmap.
+#
+# Every language driver (Python, Node, Go, Java, Rust, .NET, Ruby, PHP)
+# is required to pass this suite before release. Tests are defined
+# once here in YAML and per-driver harnesses translate them to their
+# native test framework (pytest / jest / go test / JUnit / cargo test /
+# xunit / rspec / phpunit). Test IDs are stable — drivers MUST NOT
+# renumber, only add new ones above 999.
+#
+# Each test has:
+#   id          — stable integer identifier, unique across the suite.
+#   name        — short human-readable name (for test-case naming).
+#   category    — one of: connect, exec, query, txn, pool, types, tls,
+#                 retry, telemetry, orm.
+#   setup       — list of SQL statements run before the test (optional).
+#   teardown    — list of SQL statements run after (optional).
+#   operation   — the action under test (opaque to YAML; harness-specific).
+#   expect      — assertion data (rows, error substring, etc.).
+#
+# Drivers are expected to iterate this file, skip tests with categories
+# they don't yet implement, and produce a JUnit-style report so the
+# release workflow can aggregate results across 8 languages.
+
+version: 1
+suite: vedadb-driver-conformance
+
+# ---------------------------------------------------------------------------
+# connect — baseline TCP + AUTH
+# ---------------------------------------------------------------------------
+
+tests:
+  - id: 1
+    name: connect_plain
+    category: connect
+    operation: { kind: connect, params: { tls: false } }
+    expect: { ok: true }
+
+  - id: 2
+    name: connect_tls
+    category: connect
+    operation: { kind: connect, params: { tls: true } }
+    expect: { ok: true }
+
+  - id: 3
+    name: connect_auth_success
+    category: connect
+    operation: { kind: connect_auth, params: { user: "admin", pass: "admin" } }
+    expect: { ok: true }
+
+  - id: 4
+    name: connect_auth_failure
+    category: connect
+    operation: { kind: connect_auth, params: { user: "bogus", pass: "bogus" } }
+    expect: { ok: false, error_contains: "auth" }
+
+  # -------------------------------------------------------------------------
+  # exec — DDL / DML plumbing
+  # -------------------------------------------------------------------------
+
+  - id: 10
+    name: exec_create_table
+    category: exec
+    operation:
+      kind: exec
+      sql: "CREATE TABLE conf_ex10 (id INT PRIMARY KEY, v STRING) ENGINE structured;"
+    expect: { ok: true }
+
+  - id: 11
+    name: exec_insert_returns_affected
+    category: exec
+    setup:
+      - "CREATE TABLE conf_ex11 (id INT PRIMARY KEY, v STRING) ENGINE structured;"
+    operation:
+      kind: exec_affected
+      sql: "INSERT INTO conf_ex11 (id, v) VALUES (1, 'a'), (2, 'b'), (3, 'c');"
+    expect: { ok: true, rows_affected: 3 }
+    teardown:
+      - "DROP TABLE conf_ex11;"
+
+  - id: 12
+    name: exec_syntax_error_surfaces
+    category: exec
+    operation: { kind: exec, sql: "SELEKT 1;" }
+    expect: { ok: false, error_contains: "SELEKT" }
+
+  # -------------------------------------------------------------------------
+  # query — rows + columns
+  # -------------------------------------------------------------------------
+
+  - id: 20
+    name: query_select_one
+    category: query
+    operation: { kind: query, sql: "SELECT 1 AS n;" }
+    expect:
+      ok: true
+      columns: ["n"]
+      rows: [["1"]]
+
+  - id: 21
+    name: query_select_multi_row
+    category: query
+    setup:
+      - "CREATE TABLE conf_q21 (id INT PRIMARY KEY, name STRING) ENGINE structured;"
+      - "INSERT INTO conf_q21 (id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c');"
+    operation: { kind: query, sql: "SELECT id, name FROM conf_q21 ORDER BY id;" }
+    expect:
+      ok: true
+      columns: ["id", "name"]
+      row_count: 3
+    teardown: ["DROP TABLE conf_q21;"]
+
+  - id: 22
+    name: query_null_roundtrip
+    category: query
+    operation:
+      kind: query
+      sql: "SELECT COUNT(*) AS c, SUM(x) AS s FROM (SELECT 1 AS x WHERE 1=0);"
+    expect:
+      ok: true
+      # COUNT on empty = 0, SUM on empty = NULL — 0.3.0 regression lock-in.
+      rows: [["0", "NULL"]]
+
+  # -------------------------------------------------------------------------
+  # txn — begin/commit/rollback/savepoint
+  # -------------------------------------------------------------------------
+
+  - id: 30
+    name: txn_commit_persists
+    category: txn
+    setup: ["CREATE TABLE conf_tx30 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps:
+        - "BEGIN;"
+        - "INSERT INTO conf_tx30 (id) VALUES (1);"
+        - "COMMIT;"
+      verify: "SELECT COUNT(*) FROM conf_tx30;"
+    expect: { ok: true, verify_equals: "1" }
+    teardown: ["DROP TABLE conf_tx30;"]
+
+  - id: 31
+    name: txn_rollback_undoes
+    category: txn
+    setup: ["CREATE TABLE conf_tx31 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps:
+        - "BEGIN;"
+        - "INSERT INTO conf_tx31 (id) VALUES (1);"
+        - "ROLLBACK;"
+      verify: "SELECT COUNT(*) FROM conf_tx31;"
+    expect: { ok: true, verify_equals: "0" }
+    teardown: ["DROP TABLE conf_tx31;"]
+
+  - id: 32
+    name: txn_savepoint_basic
+    category: txn
+    setup: ["CREATE TABLE conf_sp32 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps:
+        - "BEGIN;"
+        - "INSERT INTO conf_sp32 (id) VALUES (1);"
+        - "SAVEPOINT sp1;"
+        - "INSERT INTO conf_sp32 (id) VALUES (2);"
+        - "ROLLBACK TO sp1;"
+        - "COMMIT;"
+      verify: "SELECT COUNT(*) FROM conf_sp32;"
+    expect: { ok: true, verify_equals: "1" }
+    teardown: ["DROP TABLE conf_sp32;"]
+
+  # -------------------------------------------------------------------------
+  # pool — connection pooling
+  # -------------------------------------------------------------------------
+
+  - id: 40
+    name: pool_reuse_connection
+    category: pool
+    operation: { kind: pool_reuse, params: { min: 1, max: 2, iterations: 100 } }
+    expect: { ok: true, connection_count_le: 2 }
+
+  - id: 41
+    name: pool_health_check
+    category: pool
+    operation: { kind: pool_health, params: { min: 1, max: 2 } }
+    expect: { ok: true }
+
+  # -------------------------------------------------------------------------
+  # types — value round-tripping
+  # -------------------------------------------------------------------------
+
+  - id: 50
+    name: types_int_roundtrip
+    category: types
+    setup: ["CREATE TABLE conf_t50 (v INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: insert_select_roundtrip
+      table: conf_t50
+      column: v
+      values: [0, 1, -1, 2147483647, -2147483648]
+    expect: { ok: true, lossless: true }
+    teardown: ["DROP TABLE conf_t50;"]
+
+  - id: 51
+    name: types_string_unicode
+    category: types
+    setup: ["CREATE TABLE conf_t51 (v STRING PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: insert_select_roundtrip
+      table: conf_t51
+      column: v
+      values: ["hello", "héllo", "日本語", "🚀"]
+    expect: { ok: true, lossless: true }
+    teardown: ["DROP TABLE conf_t51;"]
+
+  # -------------------------------------------------------------------------
+  # retry — exponential backoff under transient errors
+  # -------------------------------------------------------------------------
+
+  - id: 60
+    name: retry_on_connection_reset
+    category: retry
+    operation: { kind: retry, params: { failures: 2, max_attempts: 5 } }
+    expect: { ok: true, attempts_ge: 3 }
+
+  # -------------------------------------------------------------------------
+  # telemetry — OpenTelemetry span propagation
+  # -------------------------------------------------------------------------
+
+  - id: 70
+    name: otel_span_per_query
+    category: telemetry
+    operation: { kind: query_with_span, sql: "SELECT 1;" }
+    expect: { ok: true, span_count: 1 }
+
+  # -------------------------------------------------------------------------
+  # orm — driver-specific ORM hook wiring
+  # Each ORM-driver pairs is identified by an "orm" field the harness
+  # translates: Python→SQLAlchemy, Node→Prisma/Drizzle, Go→database/sql+ent,
+  # Java→JDBC+Hibernate, Rust→sqlx+SeaORM, .NET→EF Core, Ruby→ActiveRecord,
+  # PHP→PDO+Doctrine.
+  # -------------------------------------------------------------------------
+
+  - id: 80
+    name: orm_smoke_insert_select
+    category: orm
+    setup: ["CREATE TABLE conf_orm80 (id INT PRIMARY KEY, name STRING) ENGINE structured;"]
+    operation:
+      kind: orm_crud
+      table: conf_orm80
+      rows:
+        - { id: 1, name: "alice" }
+        - { id: 2, name: "bob" }
+    expect: { ok: true, row_count: 2 }
+    teardown: ["DROP TABLE conf_orm80;"]
