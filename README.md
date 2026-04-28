@@ -23,6 +23,7 @@ written against one driver behaves identically against any other.
 | .NET / C# | Alpha | yes | yes (Task-based) | yes (native) | yes (`VedaPool`) | [`dotnet/`](./dotnet) |
 | Ruby | Alpha | yes | no (planned) | no (sorbet planned) | yes | [`ruby/`](./ruby) |
 | PHP | Alpha | yes | no | yes (PHPDoc) | yes | [`php/`](./php) |
+| Rust | Alpha | yes | no | yes (native) | yes (`vedadb::Pool`) | [`rust/`](./rust) |
 
 GA = production-ready, semver-stable, on-call coverage.
 Beta = API stable, used in production by early adopters, no SLA on
@@ -136,6 +137,25 @@ foreach ($db->query("SELECT id, name FROM users LIMIT 10") as $row) {
 }
 ```
 
+### Rust
+
+```bash
+cargo add vedadb
+```
+
+```rust
+use vedadb::Client;
+
+fn main() -> vedadb::Result<()> {
+    let mut db = Client::connect("localhost", 6380)?;
+    let result = db.query("SELECT id, name FROM users LIMIT 10;")?;
+    for row in result.to_maps() {
+        println!("{:?}", row);
+    }
+    Ok(())
+}
+```
+
 ---
 
 ## How they all work
@@ -209,7 +229,6 @@ add a new test scenario or a new driver.
 We do not yet ship official drivers for the following languages.
 Community PRs that follow the conformance suite are welcome:
 
-* **Rust** — exploratory crate exists internally; not yet promoted.
 * **Elixir** — wire protocol maps cleanly to `gen_tcp`; no driver yet.
 * **Swift** — desired for mobile / server-side Swift; no driver yet.
 
