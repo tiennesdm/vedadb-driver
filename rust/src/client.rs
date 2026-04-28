@@ -199,14 +199,17 @@ impl Client {
                 );
                 return Err(VedaError::Connection(
                     "TLS requested but no TLS feature is compiled in \
-                     (build with --features native-tls or --features rustls)".into(),
+                     (build with --features native-tls or --features rustls)"
+                        .into(),
                 ));
             }
         }
 
         let addr = format!("{}:{}", config.host, config.port);
         let tcp = TcpStream::connect_timeout(
-            &addr.parse().map_err(|e| VedaError::Connection(format!("{}", e)))?,
+            &addr
+                .parse()
+                .map_err(|e| VedaError::Connection(format!("{}", e)))?,
             config.timeout,
         )?;
         tcp.set_read_timeout(Some(config.timeout))?;
@@ -259,7 +262,9 @@ impl Client {
         self.stream.read_line(&mut response)?;
 
         if response.is_empty() {
-            return Err(VedaError::Connection("connection closed during STARTTLS".into()));
+            return Err(VedaError::Connection(
+                "connection closed during STARTTLS".into(),
+            ));
         }
 
         let trimmed = response.trim();
@@ -289,7 +294,8 @@ impl Client {
             let _ = hostname;
             return Err(VedaError::Connection(
                 "native-tls feature is a placeholder; recompile with \
-                 --features rustls for a wired TLS backend".into(),
+                 --features rustls for a wired TLS backend"
+                    .into(),
             ));
         }
 
@@ -298,9 +304,7 @@ impl Client {
         #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
         {
             let _ = hostname;
-            Err(VedaError::Connection(
-                "no TLS backend compiled in".into(),
-            ))
+            Err(VedaError::Connection("no TLS backend compiled in".into()))
         }
     }
 
@@ -336,8 +340,8 @@ impl Client {
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
-        let server_name = rustls_pki_types::ServerName::try_from(hostname.to_string())
-            .map_err(|e| {
+        let server_name =
+            rustls_pki_types::ServerName::try_from(hostname.to_string()).map_err(|e| {
                 VedaError::Connection(format!("invalid TLS server name {:?}: {}", hostname, e))
             })?;
 
@@ -358,21 +362,27 @@ impl Client {
 
     /// Authenticate with the server using AUTH command.
     fn authenticate(&mut self, username: &str, password: &str) -> Result<()> {
-        self.stream.write_all(format!("AUTH {} {}\n", username, password).as_bytes())?;
+        self.stream
+            .write_all(format!("AUTH {} {}\n", username, password).as_bytes())?;
         self.stream.flush()?;
 
         let mut response = String::new();
         self.stream.read_line(&mut response)?;
 
         if response.is_empty() {
-            return Err(VedaError::Connection("connection closed during AUTH".into()));
+            return Err(VedaError::Connection(
+                "connection closed during AUTH".into(),
+            ));
         }
 
         let trimmed = response.trim();
 
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
             if let Some(err) = parsed.get("error").and_then(|e| e.as_str()) {
-                return Err(VedaError::Connection(format!("authentication failed: {}", err)));
+                return Err(VedaError::Connection(format!(
+                    "authentication failed: {}",
+                    err
+                )));
             }
         }
 
@@ -386,7 +396,10 @@ impl Client {
 
     /// Execute a VedaQL query and return the result.
     pub fn query(&mut self, sql: &str) -> Result<VedaResult> {
-        let _guard = self.lock.lock().map_err(|_| VedaError::Connection("lock poisoned".into()))?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| VedaError::Connection("lock poisoned".into()))?;
 
         self.stream.write_all(sql.as_bytes())?;
         self.stream.write_all(b"\n")?;
@@ -415,7 +428,11 @@ impl Client {
     }
 
     /// Insert a row into a table.
-    pub fn insert(&mut self, table: &str, data: &[(&str, &dyn std::fmt::Display)]) -> Result<String> {
+    pub fn insert(
+        &mut self,
+        table: &str,
+        data: &[(&str, &dyn std::fmt::Display)],
+    ) -> Result<String> {
         let cols: Vec<&str> = data.iter().map(|(k, _)| *k).collect();
         let vals: Vec<String> = data.iter().map(|(_, v)| format!("'{}'", v)).collect();
 
@@ -458,7 +475,10 @@ impl Client {
         set: &[(&str, &dyn std::fmt::Display)],
         where_clause: Option<&str>,
     ) -> Result<String> {
-        let set_clause: Vec<String> = set.iter().map(|(k, v)| format!("{} = '{}'", k, v)).collect();
+        let set_clause: Vec<String> = set
+            .iter()
+            .map(|(k, v)| format!("{} = '{}'", k, v))
+            .collect();
         let mut sql = format!("UPDATE {} SET {}", table, set_clause.join(", "));
         if let Some(w) = where_clause {
             sql.push_str(&format!(" WHERE {}", w));
@@ -580,7 +600,9 @@ impl Client {
 
             let addr = format!("{}:{}", self.config_host, self.config_port);
             let stream = match TcpStream::connect_timeout(
-                &addr.parse().map_err(|e| VedaError::Connection(format!("{}", e)))?,
+                &addr
+                    .parse()
+                    .map_err(|e| VedaError::Connection(format!("{}", e)))?,
                 self.config_timeout,
             ) {
                 Ok(s) => s,
@@ -630,7 +652,9 @@ impl Client {
             self.is_tls = false;
             return Ok(());
         }
-        Err(VedaError::Connection("reconnect failed after 3 attempts".into()))
+        Err(VedaError::Connection(
+            "reconnect failed after 3 attempts".into(),
+        ))
     }
 
     // --- Batch Insert ---
@@ -698,12 +722,7 @@ impl Client {
     // --- Graph API ---
 
     /// Add a node to the graph with a label and optional properties.
-    pub fn graph_add_node(
-        &mut self,
-        id: &str,
-        label: &str,
-        props: &[(&str, &str)],
-    ) -> Result<()> {
+    pub fn graph_add_node(&mut self, id: &str, label: &str, props: &[(&str, &str)]) -> Result<()> {
         let props_str: Vec<String> = props
             .iter()
             .map(|(k, v)| format!("{}: '{}'", k, v))
