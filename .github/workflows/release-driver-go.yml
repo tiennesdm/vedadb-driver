@@ -3,7 +3,8 @@ name: release-driver-go
 on:
   push:
     tags:
-      - 'go-v*.*.*'
+      - 'drivers/go-v*.*.*'
+      - 'go-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-go-${{ github.ref }}
