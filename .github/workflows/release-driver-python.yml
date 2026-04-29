@@ -1,0 +1,68 @@
+name: release-driver-python
+
+on:
+  push:
+    tags:
+      - 'drivers/python-v*.*.*'
+
+concurrency:
+  group: release-driver-python-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/drivers/python-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build twine pytest
+
+      - name: Install package (for tests)
+        run: pip install -e .
+
+      - name: Run tests
+        run: |
+          if [ -d tests ]; then
+            pytest -q tests || (echo "::error::python driver tests failed" && exit 1)
+          else
+            echo "no tests directory, skipping"
+          fi
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Twine check
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload --non-interactive dist/*
+
+      - name: Job summary
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/python-v}"
+          {
+            echo "### VedaDB Python driver published"
+            echo ""
+            echo "- Version: \`$VERSION\`"
+            echo "- Registry: https://pypi.org/project/vedadb/$VERSION/"
+            echo "- Install: \`pip install vedadb==$VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"

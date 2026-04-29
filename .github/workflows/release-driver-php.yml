@@ -1,0 +1,70 @@
+name: release-driver-php
+
+on:
+  push:
+    tags:
+      - 'drivers/php-v*.*.*'
+
+concurrency:
+  group: release-driver-php-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate + signal Packagist
+    if: startsWith(github.ref, 'refs/tags/drivers/php-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: json, sockets
+          tools: composer:v2
+
+      - name: composer validate
+        run: composer validate --strict
+
+      - name: composer install
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: PHPUnit
+        run: |
+          if [ -x vendor/bin/phpunit ]; then
+            vendor/bin/phpunit
+          else
+            echo "phpunit not installed, skipping"
+          fi
+
+      - name: Ping Packagist update hook (optional)
+        if: ${{ env.PACKAGIST_USER != '' && env.PACKAGIST_TOKEN != '' }}
+        env:
+          PACKAGIST_USER: ${{ secrets.PACKAGIST_USER }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+        run: |
+          curl -sS -XPOST -H 'content-type:application/json' \
+            "https://packagist.org/api/update-package?username=${PACKAGIST_USER}&apiToken=${PACKAGIST_TOKEN}" \
+            -d '{"repository":{"url":"https://github.com/tiennesdm/VedaDb"}}' || true
+
+      - name: Job summary
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/php-v}"
+          {
+            echo "### VedaDB PHP driver validated"
+            echo ""
+            echo "- Version: \`$VERSION\`"
+            echo "- Registry: https://packagist.org/packages/vedadb/vedadb#$VERSION"
+            echo "- Install: \`composer require vedadb/vedadb:$VERSION\`"
+            echo ""
+            echo "_Packagist auto-pulls on tag via its GitHub webhook._"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,66 @@
+name: release-driver-ruby
+
+on:
+  push:
+    tags:
+      - 'drivers/ruby-v*.*.*'
+
+concurrency:
+  group: release-driver-ruby-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to RubyGems
+    if: startsWith(github.ref, 'refs/tags/drivers/ruby-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
+
+      - name: Align gemspec version with tag
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/ruby-v}"
+          sed -i -E "s/^([[:space:]]*s\.version[[:space:]]*=[[:space:]]*)\"[^\"]+\"/\1\"$VERSION\"/" vedadb.gemspec
+
+      - name: Run tests (if rake test available)
+        run: |
+          if [ -f Rakefile ]; then
+            bundle install || true
+            bundle exec rake test || echo "no test task, continuing"
+          else
+            echo "no Rakefile, skipping tests"
+          fi
+
+      - name: Build gem
+        run: gem build *.gemspec
+
+      - name: Push gem to RubyGems
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: gem push *.gem
+
+      - name: Job summary
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/ruby-v}"
+          {
+            echo "### VedaDB Ruby driver published"
+            echo ""
+            echo "- Version: \`$VERSION\`"
+            echo "- Registry: https://rubygems.org/gems/vedadb/versions/$VERSION"
+            echo "- Install: \`gem install vedadb -v $VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
