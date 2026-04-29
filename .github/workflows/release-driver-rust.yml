@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/rust-v*.*.*'
+      - 'rust-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-rust-${{ github.ref }}

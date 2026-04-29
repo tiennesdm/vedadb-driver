@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/node-v*.*.*'
+      - 'node-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-node-${{ github.ref }}

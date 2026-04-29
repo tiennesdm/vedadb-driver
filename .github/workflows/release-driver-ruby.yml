@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/ruby-v*.*.*'
+      - 'ruby-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-ruby-${{ github.ref }}

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/dotnet-v*.*.*'
+      - 'dotnet-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-dotnet-${{ github.ref }}

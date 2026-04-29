@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/php-v*.*.*'
+      - 'php-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-php-${{ github.ref }}

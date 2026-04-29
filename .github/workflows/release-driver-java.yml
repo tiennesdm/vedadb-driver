@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/java-v*.*.*'
+      - 'java-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-java-${{ github.ref }}

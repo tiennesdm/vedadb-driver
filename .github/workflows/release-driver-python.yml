@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'drivers/python-v*.*.*'
+      - 'python-v*.*.*'    # post-split convention
 
 concurrency:
   group: release-driver-python-${{ github.ref }}
