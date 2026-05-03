@@ -214,10 +214,33 @@ public class VedaClient implements AutoCloseable {
      * @return Query result
      */
     public VedaResult executePrepared(String name, String... params) throws IOException, VedaException {
+        Object[] objs = new Object[params.length];
+        for (int i = 0; i < params.length; i++) objs[i] = params[i];
+        return executePreparedTyped(name, objs);
+    }
+
+    /**
+     * Execute a previously prepared statement with typed parameter
+     * values. Audit #23 closure for the Java driver: the original
+     * {@link #executePrepared(String, String...)} accepted only
+     * String, force-quoting every value (so an int 42 went over
+     * the wire as the string literal '42'). This typed variant
+     * handles Integer/Long/Double/Boolean/null directly via
+     * {@link #formatValue} so numeric and boolean params land as
+     * raw SQL literals.
+     *
+     * <p>Throws {@link VedaException} if any String arg contains a
+     * NUL byte (undefined behaviour in most SQL parsers).
+     */
+    public VedaResult executePreparedTyped(String name, Object... params) throws IOException, VedaException {
         StringBuilder paramList = new StringBuilder();
         for (int i = 0; i < params.length; i++) {
             if (i > 0) paramList.append(", ");
-            paramList.append(formatValue(params[i]));
+            Object p = params[i];
+            if (p instanceof String && ((String) p).indexOf('\0') >= 0) {
+                throw new VedaException("vedadb: prepared arg contains NUL byte");
+            }
+            paramList.append(formatValue(p));
         }
         return query("EXECUTE " + name + " (" + paramList + ")");
     }
@@ -517,7 +540,12 @@ public class VedaClient implements AutoCloseable {
      * `\'` backslash escaping which VedaDB does not parse, turning every
      * `O'Brien` into a syntax error.
      */
-    private String formatValue(Object value) {
+    /**
+     * Package-private so tests in the same package can verify the
+     * audit #23 escaping contract without going through a network
+     * round-trip.
+     */
+    String formatValue(Object value) {
         if (value == null) return "NULL";
         if (value instanceof String) return "'" + ((String) value).replace("'", "''") + "'";
         if (value instanceof Boolean) return ((Boolean) value) ? "TRUE" : "FALSE";
