@@ -93,7 +93,7 @@ impl Default for Config {
 /// Uses SQL-standard `''` doubling — never `\'` backslash escaping.
 /// Wraps the result in single quotes. Pass already-quoted SQL through
 /// `query()` directly if you need a non-string literal.
-fn escape_sql_value(v: &str) -> String {
+pub(crate) fn escape_sql_value(v: &str) -> String {
     let mut out = String::with_capacity(v.len() + 2);
     out.push('\'');
     for c in v.chars() {
@@ -106,6 +106,19 @@ fn escape_sql_value(v: &str) -> String {
     }
     out.push('\'');
     out
+}
+
+/// Audit #23 closure for the Rust driver: validates a prepared
+/// statement arg before formatting. Currently rejects NUL bytes
+/// (undefined behaviour in most SQL parsers) — anything else
+/// passes through to escape_sql_value.
+pub(crate) fn validate_prepared_arg(v: &str) -> Result<()> {
+    if v.contains('\0') {
+        return Err(VedaError::Query(
+            "vedadb: prepared arg contains NUL byte".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// VedaDB Rust client driver.
@@ -521,7 +534,11 @@ impl Client {
     /// # Ok::<(), vedadb::VedaError>(())
     /// ```
     pub fn execute_prepared(&mut self, name: &str, params: &[&str]) -> Result<VedaResult> {
-        // SQL-standard `''`-doubling escape, never `\'`.
+        // SQL-standard `''`-doubling escape, never `\'`. Audit #23
+        // closure: validate each param for NUL bytes before formatting.
+        for p in params {
+            validate_prepared_arg(p)?;
+        }
         let param_list: Vec<String> = params.iter().map(|p| escape_sql_value(p)).collect();
         self.query(&format!("EXECUTE {} ({})", name, param_list.join(", ")))
     }
@@ -755,5 +772,55 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+#[cfg(test)]
+mod escape_tests {
+    //! Audit #23 closure for the Rust driver: pure-unit tests for
+    //! escape_sql_value and validate_prepared_arg. No network.
+    use super::*;
+
+    #[test]
+    fn escape_basic_string() {
+        assert_eq!(escape_sql_value("alice"), "'alice'");
+    }
+
+    #[test]
+    fn escape_doubles_single_quotes() {
+        assert_eq!(escape_sql_value("O'Brien"), "'O''Brien'");
+        // Classic injection payload: must turn into an inert literal.
+        assert_eq!(
+            escape_sql_value("'; DROP TABLE users; --"),
+            "'''; DROP TABLE users; --'"
+        );
+    }
+
+    #[test]
+    fn escape_empty_string() {
+        assert_eq!(escape_sql_value(""), "''");
+    }
+
+    #[test]
+    fn escape_no_backslash_handling() {
+        // SQL-standard: backslash is NOT special. Round-trip verbatim.
+        assert_eq!(escape_sql_value("a\\b"), "'a\\b'");
+    }
+
+    #[test]
+    fn validate_rejects_nul_byte() {
+        let s = String::from("a") + "\0" + "b";
+        let err = validate_prepared_arg(&s).unwrap_err();
+        match err {
+            VedaError::Query(msg) => assert!(msg.contains("NUL")),
+            _ => panic!("expected VedaError::Query, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_normal_string() {
+        validate_prepared_arg("alice").expect("normal string rejected");
+        validate_prepared_arg("O'Brien").expect("apostrophe rejected");
+        validate_prepared_arg("").expect("empty rejected");
     }
 }
