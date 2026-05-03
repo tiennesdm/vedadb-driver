@@ -26,6 +26,7 @@ const {
   createClient,
   escapeValue,
   escapeSqlValue,
+  substitutePlaceholders,
 } = require('./src/client');
 
 const { VedaPool } = require('./src/pool');
@@ -48,4 +49,5 @@ module.exports = {
   // Utilities
   escapeValue,
   escapeSqlValue,
+  substitutePlaceholders,
 };

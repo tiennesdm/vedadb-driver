@@ -18,6 +18,7 @@ const {
   VedaPool,
   createClient,
   escapeValue,
+  substitutePlaceholders,
 } = require('../index');
 
 // ---------------------------------------------------------------------------
@@ -101,6 +102,78 @@ function testEscapeValue() {
   assertEqual(escapeValue('hello'), "'hello'", 'string => quoted');
   assertEqual(escapeValue("it's"), "'it''s'", "single quotes doubled");
   assertEqual(escapeValue({ a: 1 }), "'{\"a\":1}'", 'object => JSON string');
+}
+
+// Audit #23 closure for the Node driver: substitutePlaceholders
+// fixes the three real bugs in the prior `prepared`/`preparedPipeline`
+// implementations (single-occurrence replace, $-special-char in
+// replacement string, multi-pass over-substitution).
+function testSubstitutePlaceholders() {
+  console.log('\n--- substitutePlaceholders (audit #23) ---');
+
+  // (1) Single $1 -> escaped value.
+  assertEqual(
+    substitutePlaceholders('SELECT * FROM t WHERE id = $1', [42]),
+    'SELECT * FROM t WHERE id = 42',
+    'numeric param substitutes raw',
+  );
+  assertEqual(
+    substitutePlaceholders('SELECT * FROM t WHERE name = $1', ['alice']),
+    "SELECT * FROM t WHERE name = 'alice'",
+    'string param quoted',
+  );
+
+  // (2) Multi-occurrence $1 — the prior `replace` (not replaceAll)
+  // would have left the second $1 as a literal token. We assert
+  // both are substituted.
+  assertEqual(
+    substitutePlaceholders('SELECT a = $1 OR b = $1', ['x']),
+    "SELECT a = 'x' OR b = 'x'",
+    'both occurrences of $1 substituted',
+  );
+
+  // (3) $-special-char safety: a value containing literal `$&`,
+  // `$'`, `$1` etc. must NOT be re-interpreted as a substitution
+  // pattern by String.prototype.replace.
+  assertEqual(
+    substitutePlaceholders('VALUES ($1)', ["price$5"]),
+    "VALUES ('price$5')",
+    "$ char in replacement preserved literally",
+  );
+  assertEqual(
+    substitutePlaceholders('VALUES ($1)', ["$' breaks naive replace"]),
+    "VALUES ('$'' breaks naive replace')",
+    "single-quote-in-value escapes correctly even with $",
+  );
+
+  // (4) Multi-pass over-substitution: a value containing literal
+  // "$2" must NOT be re-substituted on the next iteration.
+  assertEqual(
+    substitutePlaceholders('SELECT $1, $2', ["$2", 'real']),
+    "SELECT '$2', 'real'",
+    "value containing $2 token not re-substituted",
+  );
+
+  // (5) Out-of-range placeholder left as literal.
+  assertEqual(
+    substitutePlaceholders('SELECT $5', ['only']),
+    "SELECT $5",
+    'out-of-range $N left literal',
+  );
+
+  // (6) No params + template with $N → unchanged.
+  assertEqual(
+    substitutePlaceholders('SELECT $1', []),
+    'SELECT $1',
+    'empty params returns template unchanged',
+  );
+
+  // (7) Type-aware substitution.
+  assertEqual(
+    substitutePlaceholders('VALUES ($1, $2, $3, $4)', [null, true, false, 1.5]),
+    "VALUES (NULL, TRUE, FALSE, 1.5)",
+    'NULL/TRUE/FALSE/float substitution',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +457,7 @@ async function main() {
   console.log('VedaDB Node.js Driver Tests\n===========================');
 
   testEscapeValue();
+  testSubstitutePlaceholders();
   testResult();
   testErrors();
   await testNotConnected();

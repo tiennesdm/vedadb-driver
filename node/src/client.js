@@ -132,6 +132,51 @@ function escapeSqlValue(v) {
 // Back-compat alias: existing code (and tests) imports `escapeValue`.
 const escapeValue = escapeSqlValue;
 
+/**
+ * Substitute $N placeholders in `template` with escapeSqlValue(params[N-1]).
+ *
+ * Audit #23 closure for the Node driver: the previous implementation did
+ *
+ *   for each param: sql = sql.replace('$1', escapeValue(...))
+ *
+ * which has TWO real bugs:
+ *
+ *   1. `replace` (not `replaceAll`) only swaps the FIRST occurrence —
+ *      a template using `$1` twice (e.g. `WHERE a = $1 OR b = $1`)
+ *      had its second occurrence left as the literal `$1` token.
+ *
+ *   2. The replacement-string overload of String.prototype.replace
+ *      treats `$&`, `$'`, `$\``, `$N` as substitution patterns. A
+ *      param whose escaped form contained a literal `$` (e.g. JSON
+ *      `"price":"$5"`) silently injected garbage into the SQL.
+ *
+ *   3. Iterative one-pass-per-param means a param whose replacement
+ *      contained the literal `$2` would be re-substituted on the
+ *      next iteration — the classic "double substitution" attack
+ *      pattern.
+ *
+ * Single-pass regex callback fixes all three: every `$N` in the
+ * template is matched once, mapped to params[N-1] via the callback,
+ * and the callback's return value is inserted verbatim (no $-special-
+ * char interpretation, no multi-pass interaction).
+ *
+ * Behaviour: a `$N` whose N is out of range for `params` is left as
+ * the literal token (so static SQL containing `$variable`-style
+ * identifiers passes through unchanged when no params supplied).
+ */
+function substitutePlaceholders(template, params) {
+  if (!params || params.length === 0) {
+    return template;
+  }
+  return template.replace(/\$(\d+)/g, (match, idxStr) => {
+    const idx = Number(idxStr);
+    if (!Number.isInteger(idx) || idx < 1 || idx > params.length) {
+      return match; // out of range — leave literal
+    }
+    return escapeSqlValue(params[idx - 1]);
+  });
+}
+
 function buildWhereClause(where) {
   if (!where || Object.keys(where).length === 0) return '';
   const conditions = Object.entries(where).map(([k, v]) => {
@@ -708,13 +753,7 @@ class VedaDB {
    *   await client.prepared("SELECT * FROM stocks WHERE symbol = $1", ['GOOGL']);
    */
   prepared(template, params = []) {
-    // Substitute parameters into template.
-    let sql = template;
-    for (let i = 0; i < params.length; i++) {
-      const placeholder = '$' + (i + 1);
-      sql = sql.replace(placeholder, escapeValue(params[i]));
-    }
-    return this.query(sql);
+    return this.query(substitutePlaceholders(template, params));
   }
 
   /**
@@ -732,13 +771,7 @@ class VedaDB {
    *   );
    */
   preparedPipeline(template, paramSets) {
-    const queries = paramSets.map(params => {
-      let sql = template;
-      for (let i = 0; i < params.length; i++) {
-        sql = sql.replace('$' + (i + 1), escapeValue(params[i]));
-      }
-      return sql;
-    });
+    const queries = paramSets.map(params => substitutePlaceholders(template, params));
     return this.pipeline(queries);
   }
 
@@ -905,4 +938,6 @@ module.exports = {
   createClient,
   escapeValue,
   escapeSqlValue,
+  // Exposed for unit tests of the audit #23 substitution contract.
+  substitutePlaceholders,
 };
