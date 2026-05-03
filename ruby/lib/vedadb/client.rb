@@ -106,8 +106,18 @@ module VedaDB
     end
 
     # Execute a previously prepared statement with arguments.
+    #
+    # Audit #23: rejects NUL bytes in any String arg before
+    # formatting (undefined behaviour in most SQL parsers).
+    # Type-aware: nil → NULL, true/false → TRUE/FALSE, numerics
+    # pass through as raw literals; strings are escaped.
     def execute_prepared(name, *args)
-      quoted = args.map { |a| format_value(a.is_a?(String) ? a : a.to_s) }.join(", ")
+      args.each_with_index do |a, i|
+        if a.is_a?(String) && a.include?("\0")
+          raise QueryError, "vedadb: prepared arg #{i} contains NUL byte"
+        end
+      end
+      quoted = args.map { |a| format_value(a) }.join(", ")
       query("EXECUTE #{name} (#{quoted})")
     end
 

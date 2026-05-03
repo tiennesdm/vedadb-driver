@@ -214,6 +214,7 @@ public class VedaClient : IDisposable, IAsyncDisposable
     /// <param name="parameters">Parameter values</param>
     public async Task<VedaResult> ExecutePreparedAsync(string name, params string[] parameters)
     {
+        ValidatePreparedArgs(parameters);
         var paramList = string.Join(", ", parameters.Select(p => FormatValue(p)));
         return await QueryAsync($"EXECUTE {name} ({paramList})");
     }
@@ -240,6 +241,7 @@ public class VedaClient : IDisposable, IAsyncDisposable
     /// </summary>
     public VedaResult ExecutePrepared(string name, params string[] parameters)
     {
+        ValidatePreparedArgs(parameters);
         var paramList = string.Join(", ", parameters.Select(p => FormatValue(p)));
         return Query($"EXECUTE {name} ({paramList})");
     }
@@ -516,13 +518,32 @@ public class VedaClient : IDisposable, IAsyncDisposable
     // SQL-standard single-quote doubling (`''`). Earlier revisions used
     // `\'` backslash escaping which VedaDB does not parse — turning every
     // `O'Brien` into a syntax error.
-    private static string FormatValue(object? value) => value switch
+    // Internal so the in-package test project can verify the
+    // audit #23 escape contract without spinning up a real server.
+    internal static string FormatValue(object? value) => value switch
     {
         null => "NULL",
         string s => $"'{s.Replace("'", "''")}'",
         bool b => b ? "TRUE" : "FALSE",
         _ => value.ToString() ?? "NULL"
     };
+
+    /// <summary>
+    /// Audit #23 closure: rejects NUL bytes in any prepared-arg
+    /// before they reach the wire. NUL is undefined behaviour in
+    /// most SQL parsers — refused with VedaException rather than
+    /// emitted to the wire as undefined data.
+    /// </summary>
+    internal static void ValidatePreparedArgs(string[] parameters)
+    {
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            if (parameters[i] != null && parameters[i].IndexOf('\0') >= 0)
+            {
+                throw new VedaException($"vedadb: prepared arg {i} contains NUL byte");
+            }
+        }
+    }
 
     public void Dispose()
     {

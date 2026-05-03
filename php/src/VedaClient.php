@@ -199,6 +199,13 @@ class VedaClient
      */
     public function executePrepared(string $name, string ...$args): VedaResult
     {
+        // Audit #23: reject NUL bytes BEFORE the wire — undefined
+        // behaviour in most SQL parsers; refuse rather than emit.
+        foreach ($args as $i => $a) {
+            if (str_contains($a, "\0")) {
+                throw new VedaException("vedadb: prepared arg {$i} contains NUL byte");
+            }
+        }
         // SQL-standard `''`-doubling — never `\'`.
         $quoted = array_map(fn(string $a) => "'" . str_replace("'", "''", $a) . "'", $args);
         $argList = implode(', ', $quoted);
