@@ -309,17 +309,34 @@ class VedaDB:
         """
         return self._send(f"PREPARE {name} AS {query}")
 
-    def execute_prepared(self, name: str, *args: str) -> Result:
+    def execute_prepared(self, name: str, *args: Any) -> Result:
         """Execute a previously prepared statement.
 
         Args:
             name: The prepared statement name.
-            *args: Values to bind to the placeholders.
+            *args: Values to bind to the placeholders. Strings are
+                SQL-escaped (single quotes doubled, NUL bytes
+                rejected) before interpolation. ints/floats/bools
+                serialized as numeric / bool literals (no quoting).
+                None becomes NULL.
 
         Returns:
             Result with query results.
+
+        Raises:
+            QueryError: if any arg contains a NUL byte (undefined
+                behaviour in most SQL parsers; we refuse rather than
+                produce undefined wire output).
+
+        Audit #23 fix: the previous implementation did
+            quoted = ", ".join(f"'{a}'" for a in args)
+        — naive single-quote wrap with NO escaping. An arg
+        containing a single quote terminated the literal early and
+        opened an SQL-injection window. _format_prepared_arg
+        applies proper SQL escaping (double the quotes, reject NUL)
+        AND type-distinguishes numeric / bool / NULL from string.
         """
-        quoted = ", ".join(f"'{a}'" for a in args)
+        quoted = ", ".join(_format_prepared_arg(a) for a in args)
         return self._send(f"EXECUTE {name} ({quoted})")
 
     def deallocate(self, name: str) -> Result:
@@ -621,3 +638,22 @@ def _format_value(value: Any) -> str:
         )
         return f"'{escaped}'"
     return str(value)
+
+
+def _format_prepared_arg(value: Any) -> str:
+    """Format an EXECUTE-prepared argument with proper SQL escaping.
+
+    Audit #23 closure for the Python driver: the previous
+    execute_prepared call did naive single-quote wrap with no
+    escaping, opening an SQL-injection window for any arg
+    containing a single quote.
+
+    Behaviour matches _format_value with one extra safety check:
+    NUL bytes anywhere in a string arg raise QueryError. NUL is
+    undefined behaviour in most SQL parsers and never appears in
+    a legitimate value — refusing is safer than producing
+    undefined wire output.
+    """
+    if isinstance(value, str) and "\x00" in value:
+        raise QueryError("vedadb: prepared arg contains NUL byte")
+    return _format_value(value)

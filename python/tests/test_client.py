@@ -6,7 +6,7 @@ import unittest
 from io import BytesIO
 from unittest.mock import MagicMock, patch, PropertyMock
 
-from vedadb.client import VedaDB, Result, VedaDBError, ConnectionError, QueryError, AuthError, _format_value
+from vedadb.client import VedaDB, Result, VedaDBError, ConnectionError, QueryError, AuthError, _format_value, _format_prepared_arg
 from vedadb.pool import ConnectionPool
 
 
@@ -308,6 +308,58 @@ class TestConnectionPool(unittest.TestCase):
         pool.max_size = 5
         with self.assertRaises(ConnectionError):
             pool.acquire()
+
+
+class TestFormatPreparedArg(unittest.TestCase):
+    """Audit #23 closure for the Python driver: execute_prepared
+    args go through proper SQL escaping + type-aware formatting,
+    not the previous naive single-quote wrap."""
+
+    def test_string_quotes_doubled(self):
+        # Single quotes must be doubled — naive wrap would terminate
+        # the literal early and open an SQL-injection window.
+        self.assertEqual(_format_prepared_arg("O'Brien"), "'O''Brien'")
+        self.assertEqual(
+            _format_prepared_arg("'; DROP TABLE users; --"),
+            "'''; DROP TABLE users; --'",
+        )
+
+    def test_string_basic(self):
+        self.assertEqual(_format_prepared_arg("alice"), "'alice'")
+
+    def test_int_no_quotes(self):
+        self.assertEqual(_format_prepared_arg(42), "42")
+        self.assertEqual(_format_prepared_arg(-7), "-7")
+
+    def test_float_no_quotes(self):
+        # str(float) is fine for our purpose — we don't try to
+        # round-trip exact bits.
+        self.assertIn("3.14", _format_prepared_arg(3.14))
+
+    def test_bool_uppercase(self):
+        self.assertEqual(_format_prepared_arg(True), "TRUE")
+        self.assertEqual(_format_prepared_arg(False), "FALSE")
+
+    def test_none_is_null(self):
+        self.assertEqual(_format_prepared_arg(None), "NULL")
+
+    def test_nul_byte_rejected(self):
+        # NUL is undefined behaviour in most SQL parsers; refuse
+        # rather than emit undefined wire output.
+        with self.assertRaises(QueryError):
+            _format_prepared_arg("a\x00b")
+
+    def test_newline_escaped(self):
+        # Multi-line strings must be escaped so the parser
+        # doesn't treat them as statement boundaries.
+        out = _format_prepared_arg("line1\nline2")
+        self.assertNotIn("\n", out)  # literal newline absent
+        self.assertIn("\\n", out)    # escape sequence present
+
+    def test_backslash_doubled(self):
+        # Backslash must be escaped first so subsequent quote-
+        # escape doesn't get fooled by `\\'`.
+        self.assertEqual(_format_prepared_arg("a\\b"), "'a\\\\b'")
 
 
 if __name__ == "__main__":
