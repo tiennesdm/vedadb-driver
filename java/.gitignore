@@ -1,0 +1,12 @@
+# Maven build artifacts
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.sar
+*.iml
+.idea/
+.vscode/
+*.swp
+*.bak

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vedadb"
+version = "0.2.0"
+description = "Official Python driver for VedaDB - The Multi-Model Database Engine"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.8"
+authors = [
+    { name = "VedaDB Contributors" }
+]
+keywords = ["vedadb", "database", "multi-model", "sql", "nosql", "cache", "search", "driver"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Database :: Front-Ends",
+]
+
+[project.urls]
+Homepage = "https://github.com/vedadb/vedadb"
+Documentation = "https://github.com/vedadb/vedadb/tree/main/drivers/python#readme"
+Repository = "https://github.com/vedadb/vedadb"
+"Bug Tracker" = "https://github.com/vedadb/vedadb/issues"
+
+[tool.setuptools.packages.find]
+include = ["vedadb*"]
+
+[tool.setuptools.package-data]
+vedadb = ["py.typed", "*.pyi"]

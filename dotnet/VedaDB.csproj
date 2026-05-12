@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+    <RootNamespace>VedaDB</RootNamespace>
+    <AssemblyName>VedaDB</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>VedaDB Contributors</Authors>
+    <Description>Official .NET driver for VedaDB - The Multi-Model Database Engine. Full-featured with connection pooling, load balancing, circuit breaker, retry policies, query caching, bulk insert, change streams, pub/sub, failover, and Prometheus metrics.</Description>
+    <PackageId>VedaDB</PackageId>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/vedadb/vedadb</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/vedadb/vedadb.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vedadb;database;multi-model;sql;nosql;cache;search;driver;connection-pool;load-balancer;circuit-breaker;retry;pubsub;change-streams;bulk-insert</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Nullable>enable</Nullable>
+    <LangVersion>10</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Exclude test files from library compilation -->
+  <ItemGroup>
+    <Compile Remove="VedaDB.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net6.0'">
+    <PackageReference Include="System.Net.Security" Version="4.3.2" />
+  </ItemGroup>
+
+</Project>

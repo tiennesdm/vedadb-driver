@@ -1,0 +1,76 @@
+name: release-driver-dotnet
+
+on:
+  push:
+    tags:
+      - 'drivers/dotnet-v*.*.*'
+      - 'dotnet-v*.*.*'    # post-split convention
+
+concurrency:
+  group: release-driver-dotnet-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to NuGet.org
+    if: startsWith(github.ref, 'refs/tags/drivers/dotnet-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dotnet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Extract version from tag
+        id: ver
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/dotnet-v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: |
+          if ls *.Tests.csproj tests/*.csproj 2>/dev/null | grep -q csproj; then
+            dotnet test -c Release --no-restore
+          else
+            echo "no test project, skipping"
+          fi
+
+      - name: Pack
+        run: >-
+          dotnet pack -c Release --no-restore
+          -p:Version=${{ steps.ver.outputs.VERSION }}
+          -p:PackageVersion=${{ steps.ver.outputs.VERSION }}
+          -o artifacts
+
+      - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Job summary
+        run: |
+          V="${{ steps.ver.outputs.VERSION }}"
+          {
+            echo "### VedaDB .NET driver published"
+            echo ""
+            echo "- Version: \`$V\`"
+            echo "- Registry: https://www.nuget.org/packages/VedaDB/$V"
+            echo "- Install: \`dotnet add package VedaDB --version $V\`"
+          } >> "$GITHUB_STEP_SUMMARY"

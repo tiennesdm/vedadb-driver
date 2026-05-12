@@ -1,0 +1,13 @@
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.GeneratedMSBuildEditorConfig.editorconfig
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.AssemblyInfoInputs.cache
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.AssemblyInfo.cs
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.csproj.CoreCompileInputs.cache
+/mnt/agents/output/driver_raw/dotnet/bin/Debug/net6.0/VedaDB.deps.json
+/mnt/agents/output/driver_raw/dotnet/bin/Debug/net6.0/VedaDB.dll
+/mnt/agents/output/driver_raw/dotnet/bin/Debug/net6.0/VedaDB.pdb
+/mnt/agents/output/driver_raw/dotnet/bin/Debug/net6.0/VedaDB.xml
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.dll
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/refint/VedaDB.dll
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.xml
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/VedaDB.pdb
+/mnt/agents/output/driver_raw/dotnet/obj/Debug/net6.0/ref/VedaDB.dll

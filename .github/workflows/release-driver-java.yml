@@ -1,0 +1,65 @@
+name: release-driver-java
+
+on:
+  push:
+    tags:
+      - 'drivers/java-v*.*.*'
+      - 'java-v*.*.*'    # post-split convention
+
+concurrency:
+  group: release-driver-java-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Deploy to Sonatype OSSRH
+    if: startsWith(github.ref, 'refs/tags/drivers/java-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: java
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          server-id: ossrh
+          server-username: OSSRH_USERNAME
+          server-password: OSSRH_TOKEN
+          gpg-private-key: ${{ secrets.OSSRH_GPG_KEY }}
+          gpg-passphrase: OSSRH_GPG_PASSPHRASE
+
+      - name: Align pom.xml version with tag
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/java-v}"
+          mvn -B versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+
+      - name: Verify (compile + test)
+        run: mvn -B verify
+
+      - name: Deploy to OSSRH (release profile, signed)
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}
+          OSSRH_GPG_PASSPHRASE: ${{ secrets.OSSRH_GPG_PASSPHRASE }}
+        run: mvn -B deploy -P release -DskipTests
+
+      - name: Job summary
+        run: |
+          TAG="${GITHUB_REF##refs/tags/}"
+          VERSION="${TAG##drivers/java-v}"
+          {
+            echo "### VedaDB Java driver deployed"
+            echo ""
+            echo "- Version: \`$VERSION\`"
+            echo "- Coordinates: \`io.vedadb:vedadb:$VERSION\`"
+            echo "- Registry: https://central.sonatype.com/artifact/io.vedadb/vedadb/$VERSION"
+          } >> "$GITHUB_STEP_SUMMARY"

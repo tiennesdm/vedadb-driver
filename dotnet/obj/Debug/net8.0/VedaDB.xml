@@ -1,0 +1,2314 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>VedaDB</name>
+    </assembly>
+    <members>
+        <member name="T:VedaDB.VedaBulkResult">
+            <summary>
+            Bulk insert operation result.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkResult.TotalInserted">
+            <summary>
+            Total number of rows inserted.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkResult.BatchCount">
+            <summary>
+            Number of batches processed.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkResult.PendingCount">
+            <summary>
+            Number of rows in the final partial batch (0 if none).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkResult.Duration">
+            <summary>
+            Total duration of the operation.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkResult.Errors">
+            <summary>
+            Any errors encountered.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkResult.IsSuccess">
+            <summary>
+            Whether the operation was successful.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaBulkInserter">
+            <summary>
+            High-performance bulk inserter for VedaDB.
+            Buffers rows and flushes in configurable batch sizes.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkInserter.TotalInserted">
+            <summary>
+            Total rows inserted so far.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkInserter.BufferSize">
+            <summary>
+            Current buffer size.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkInserter.BatchCount">
+            <summary>
+            Number of batches flushed.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaBulkInserter.HasPendingRows">
+            <summary>
+            Whether there are pending rows in the buffer.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.#ctor(VedaDB.VedaClient,System.String,System.String[],System.Int32)">
+            <summary>
+            Create a bulk inserter.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.#ctor(VedaDB.VedaClient,System.String,System.Int32)">
+            <summary>
+            Create a bulk inserter with columns inferred from the first row.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.AddAsync(System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Add a row to the buffer. Flushes if buffer reaches batch size.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.AddAsync(System.Object,System.Threading.CancellationToken)">
+            <summary>
+            Add a row from an anonymous object or typed object.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.AddRangeAsync(System.Collections.Generic.IEnumerable{System.Collections.Generic.Dictionary{System.String,System.Object}},System.Threading.CancellationToken)">
+            <summary>
+            Add multiple rows at once.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.FlushAsync(System.Threading.CancellationToken)">
+            <summary>
+            Flush the current buffer to the database.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.ExecuteAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute the entire bulk insert, flushing all pending rows.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaBulkInserter.DisposeAsync">
+            <summary>
+            Flush any remaining rows and dispose.
+            </summary>
+        </member>
+        <member name="T:VedaDB.ChangeEventType">
+            <summary>
+            Type of change event.
+            </summary>
+        </member>
+        <member name="F:VedaDB.ChangeEventType.Insert">
+            <summary>A row was inserted.</summary>
+        </member>
+        <member name="F:VedaDB.ChangeEventType.Update">
+            <summary>A row was updated.</summary>
+        </member>
+        <member name="F:VedaDB.ChangeEventType.Delete">
+            <summary>A row was deleted.</summary>
+        </member>
+        <member name="F:VedaDB.ChangeEventType.Schema">
+            <summary>Table schema changed.</summary>
+        </member>
+        <member name="F:VedaDB.ChangeEventType.Unknown">
+            <summary>Unknown change type.</summary>
+        </member>
+        <member name="T:VedaDB.VedaChangeEvent">
+            <summary>
+            A change event from a watched table.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.Type">
+            <summary>
+            Type of change.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.Table">
+            <summary>
+            Table name.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.Row">
+            <summary>
+            Changed row data.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.PreviousRow">
+            <summary>
+            Previous row data (for updates).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.Timestamp">
+            <summary>
+            Timestamp of the change.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.TransactionId">
+            <summary>
+            Transaction ID if applicable.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeEvent.Position">
+            <summary>
+            Position in the change stream.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaChangeStreamConfig">
+            <summary>
+            Configuration for change streams.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeStreamConfig.PollInterval">
+            <summary>
+            Polling interval. Default is 1 second.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeStreamConfig.BatchSize">
+            <summary>
+            Maximum events to return per batch. Default is 100.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeStreamConfig.FilterTypes">
+            <summary>
+            Event types to filter for. Empty means all types.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaChangeStreamConfig.StartPosition">
+            <summary>
+            Start from a specific position. 0 means from the beginning.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaChangeStream">
+            <summary>
+            Change stream for watching table changes in real-time.
+            Implements IAsyncEnumerable for streaming consumption.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaChangeStream.#ctor(VedaDB.VedaClient,System.String,VedaDB.VedaChangeStreamConfig)">
+            <summary>
+            Create a change stream.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaChangeStream.PollOnceAsync(System.Threading.CancellationToken)">
+            <summary>
+            Poll for changes once and return events.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaChangeStream.GetAsyncEnumerator(System.Threading.CancellationToken)">
+            <summary>
+            Get the IAsyncEnumerator for streaming changes.
+            </summary>
+        </member>
+        <member name="T:VedaDB.CircuitState">
+            <summary>
+            States for the circuit breaker pattern.
+            </summary>
+        </member>
+        <member name="F:VedaDB.CircuitState.Closed">
+            <summary>Circuit is closed, requests flow through normally.</summary>
+        </member>
+        <member name="F:VedaDB.CircuitState.Open">
+            <summary>Circuit is open, requests are rejected immediately.</summary>
+        </member>
+        <member name="F:VedaDB.CircuitState.HalfOpen">
+            <summary>Circuit is half-open, allowing a test request.</summary>
+        </member>
+        <member name="T:VedaDB.VedaCircuitBreakerConfig">
+            <summary>
+            Configuration for the circuit breaker.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCircuitBreakerConfig.FailureThreshold">
+            <summary>
+            Number of failures before opening the circuit. Default is 5.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCircuitBreakerConfig.RecoveryTimeoutSeconds">
+            <summary>
+            Time before transitioning from Open to HalfOpen in seconds. Default is 30.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCircuitBreakerConfig.SuccessThreshold">
+            <summary>
+            Number of consecutive successes in HalfOpen to close the circuit. Default is 2.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCircuitBreakerConfig.FailureWindowSeconds">
+            <summary>
+            Window duration for counting failures in seconds. Default is 60.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaCircuitBreaker">
+            <summary>
+            Circuit breaker pattern implementation for VedaDB connections.
+            Prevents cascading failures by rejecting requests when the system is unhealthy.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCircuitBreaker.State">
+            <summary>
+            Current state of the circuit.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCircuitBreaker.FailureCount">
+            <summary>
+            Number of failures in the current window.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaCircuitBreaker.StateChanged">
+            <summary>
+            Event raised when the circuit state changes.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.#ctor">
+            <summary>
+            Create a circuit breaker with default configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.#ctor(VedaDB.VedaCircuitBreakerConfig)">
+            <summary>
+            Create a circuit breaker with specified configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.ExecuteAsync``1(System.Func{System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken)">
+            <summary>
+            Execute an operation through the circuit breaker.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.ExecuteAsync(System.Func{System.Threading.Tasks.Task},System.Threading.CancellationToken)">
+            <summary>
+            Execute an operation without return value.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.RecordSuccess">
+            <summary>
+            Record a successful operation.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.RecordFailure">
+            <summary>
+            Record a failed operation.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.CanExecute">
+            <summary>
+            Check if an operation can be executed.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCircuitBreaker.Reset">
+            <summary>
+            Manually reset the circuit to closed state.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaEventArgs">
+            <summary>
+            Event arguments for VedaDB connection events.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaEventArgs.Host">
+            <summary>Host of the connected server.</summary>
+        </member>
+        <member name="P:VedaDB.VedaEventArgs.Port">
+            <summary>Port of the connected server.</summary>
+        </member>
+        <member name="P:VedaDB.VedaEventArgs.Timestamp">
+            <summary>Timestamp of the event.</summary>
+        </member>
+        <member name="T:VedaDB.VedaErrorEventArgs">
+            <summary>
+            Event arguments for VedaDB error events.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaErrorEventArgs.Exception">
+            <summary>The exception that occurred.</summary>
+        </member>
+        <member name="P:VedaDB.VedaErrorEventArgs.Command">
+            <summary>The SQL command being executed when the error occurred.</summary>
+        </member>
+        <member name="P:VedaDB.VedaErrorEventArgs.Timestamp">
+            <summary>Timestamp of the error.</summary>
+        </member>
+        <member name="T:VedaDB.VedaQueryEventArgs">
+            <summary>
+            Event arguments for VedaDB query events.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryEventArgs.Command">
+            <summary>The SQL command that was executed.</summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryEventArgs.Parameters">
+            <summary>Parameters used in the query.</summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryEventArgs.Duration">
+            <summary>Duration of the query.</summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryEventArgs.RowCount">
+            <summary>Number of rows returned or affected.</summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryEventArgs.IsSuccess">
+            <summary>Whether the query was successful.</summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryEventArgs.Timestamp">
+            <summary>Timestamp of the query.</summary>
+        </member>
+        <member name="T:VedaDB.VedaClient">
+            <summary>
+            Core VedaDB .NET client driver.
+            Supports TLS encryption, authentication, connection pooling, retries,
+            circuit breaker, query caching, and all 20 production features.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.LastHost">
+            <summary>Host of the connected server.</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.LastPort">
+            <summary>Port of the connected server.</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.IsConnected">
+            <summary>Whether the client is connected.</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.IsTls">
+            <summary>Whether TLS is active.</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.IsAuthenticated">
+            <summary>Whether the client is authenticated.</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.Protocol">
+            <summary>The underlying protocol handler.</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.CircuitBreaker">
+            <summary>The circuit breaker instance (if configured).</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.QueryCache">
+            <summary>The query cache instance (if configured).</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.RetryPolicy">
+            <summary>The retry policy instance (if configured).</summary>
+        </member>
+        <member name="P:VedaDB.VedaClient.Interceptors">
+            <summary>The interceptor pipeline.</summary>
+        </member>
+        <member name="E:VedaDB.VedaClient.Connected">
+            <summary>Raised when the client connects to a server.</summary>
+        </member>
+        <member name="E:VedaDB.VedaClient.Error">
+            <summary>Raised when an error occurs.</summary>
+        </member>
+        <member name="E:VedaDB.VedaClient.QueryExecuted">
+            <summary>Raised when a query is executed.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.#ctor(VedaDB.VedaConfig)">
+            <summary>Create a client with the specified configuration.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.#ctor(System.String,System.Int32,System.Int32,System.Boolean,System.String,System.String,System.Boolean)">
+            <summary>Create a client with a connection string.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.ConnectAsync(System.Threading.CancellationToken)">
+            <summary>Connect to the server.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.Connect">
+            <summary>Connect synchronously.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.ConnectAsync(System.String)">
+            <summary>Connect to a VedaDB server from a URI string.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.FromURI(System.String)">
+            <summary>Create a client from a URI string (without connecting).</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.QueryAsync(System.String,System.Object[])">
+            <summary>Execute a SQL query and return the result set.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.ExecuteAsync(System.String,System.Object[])">
+            <summary>Execute a non-query command (INSERT/UPDATE/DELETE/DDL). Returns the number of affected rows.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.Query(System.String,System.Object[])">
+            <summary>Execute a query synchronously.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.PingAsync">
+            <summary>Ping the server to check connectivity.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CloseAsync">
+            <summary>Close the connection gracefully.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CreatePipeline">
+            <summary>Create a command pipeline for batching operations.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CreateBulkInserter(System.String,System.Int32)">
+            <summary>Create a bulk inserter for the specified table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CreateCursor(System.String,System.Object[])">
+            <summary>Create a streaming cursor for large result sets.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CreatePubSub">
+            <summary>Create a Pub/Sub messaging instance.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.WatchAsync(System.String)">
+            <summary>Watch a table for changes, returning an async enumerable of change events.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.Table(System.String)">
+            <summary>Create a fluent query builder for a table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.InsertAsync(System.String,System.Collections.Generic.Dictionary{System.String,System.Object})">
+            <summary>Insert a row into a table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.SelectAsync(System.String,System.String,System.String,System.String,System.Int32)">
+            <summary>Select rows from a table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.UpdateAsync(System.String,System.Collections.Generic.Dictionary{System.String,System.Object},System.String)">
+            <summary>Update rows in a table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.DeleteAsync(System.String,System.String)">
+            <summary>Delete rows from a table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.BeginAsync">
+            <summary>Begin a transaction.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CommitAsync">
+            <summary>Commit the current transaction.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.RollbackAsync">
+            <summary>Rollback the current transaction.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.TransactionAsync``1(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task{``0}})">
+            <summary>Execute a function inside a transaction.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.PrepareAsync(System.String,System.String)">
+            <summary>Prepare a named statement on the server.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.ExecutePreparedAsync(System.String,System.String[])">
+            <summary>Execute a prepared statement.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CacheSetAsync(System.String,System.String,System.Int32)">
+            <summary>Set a cache key with TTL.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CacheGetAsync(System.String)">
+            <summary>Get a cached value.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.CacheDelAsync(System.String)">
+            <summary>Delete a cached value.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.SearchAsync(System.String,System.String,System.Int32)">
+            <summary>Perform a fuzzy search on a table.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.GraphAddNodeAsync(System.String,System.String)">
+            <summary>Add a node to the graph.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.GraphBFSAsync(System.String,System.Int32)">
+            <summary>Perform a breadth-first search on the graph.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.ShowTablesAsync">
+            <summary>List all tables.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.ReconnectAsync(System.Int32)">
+            <summary>Reconnect to the server with backoff.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.Dispose">
+            <summary>Dispose the client and release all resources.</summary>
+        </member>
+        <member name="M:VedaDB.VedaClient.DisposeAsync">
+            <summary>Dispose the client asynchronously.</summary>
+        </member>
+        <member name="T:VedaDB.VedaConfig">
+            <summary>
+            Configuration for the VedaDB client.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Host">
+            <summary>
+            Server hostname. Default is "localhost".
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Port">
+            <summary>
+            Server port. Default is 6380.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.TimeoutMs">
+            <summary>
+            Connection timeout in milliseconds. Default is 30000.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Username">
+            <summary>
+            Username for authentication.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Password">
+            <summary>
+            Password for authentication.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Tls">
+            <summary>
+            TLS configuration.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Database">
+            <summary>
+            Database name.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.PoolMinSize">
+            <summary>
+            Connection pool minimum size. Default is 2.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.PoolMaxSize">
+            <summary>
+            Connection pool maximum size. Default is 20.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.PoolAcquireTimeout">
+            <summary>
+            Connection pool acquire timeout. Default is 10 seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.PoolMaxIdleTime">
+            <summary>
+            Connection pool max idle time. Default is 5 minutes.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Retry">
+            <summary>
+            Retry policy configuration. Null means no retries.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.CircuitBreaker">
+            <summary>
+            Circuit breaker configuration. Null means no circuit breaker.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Cache">
+            <summary>
+            Query cache configuration. Null means no caching.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConfig.Options">
+            <summary>
+            Additional connection options.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPoolConfig">
+            <summary>
+            Configuration for the VedaDB connection pool.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolConfig.MinSize">
+            <summary>
+            Minimum number of connections in the pool. Default is 2.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolConfig.MaxSize">
+            <summary>
+            Maximum number of connections in the pool. Default is 20.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolConfig.AcquireTimeout">
+            <summary>
+            Timeout for acquiring a connection. Default is 10 seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolConfig.MaxIdleTime">
+            <summary>
+            Maximum idle time before a connection is closed. Default is 5 minutes.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolConfig.MaintenanceInterval">
+            <summary>
+            Interval for maintenance tasks. Default is 30 seconds.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPoolStats">
+            <summary>
+            Connection pool statistics.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.IdleCount">
+            <summary>
+            Number of idle connections.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.ActiveCount">
+            <summary>
+            Number of active (checked-out) connections.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.TotalCount">
+            <summary>
+            Total number of connections.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.MaxSize">
+            <summary>
+            Maximum pool size.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.WaiterCount">
+            <summary>
+            Number of waiters blocked waiting for a connection.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.TotalAcquired">
+            <summary>
+            Total number of acquired connections.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.TotalReleased">
+            <summary>
+            Total number of released connections.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.TotalCreated">
+            <summary>
+            Number of connection creations.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPoolStats.TotalDisposed">
+            <summary>
+            Number of connection disposals.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPooledConnection">
+            <summary>
+            Pooled connection wrapper that returns to pool on dispose.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPooledConnection.Client">
+            <summary>
+            The underlying client.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaConnectionPool">
+            <summary>
+            Thread-safe async connection pool for VedaDB.
+            Supports min/max sizing, connection timeouts, idle reaping, and health validation.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConnectionPool.MinSize">
+            <summary>
+            Minimum pool size.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConnectionPool.MaxSize">
+            <summary>
+            Maximum pool size.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConnectionPool.AcquireTimeout">
+            <summary>
+            Timeout for acquiring a connection.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaConnectionPool.Stats">
+            <summary>
+            Current pool statistics.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.#ctor(System.Func{System.Threading.Tasks.Task{VedaDB.VedaClient}})">
+            <summary>
+            Create a connection pool with default configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.#ctor(VedaDB.VedaPoolConfig,System.Func{System.Threading.Tasks.Task{VedaDB.VedaClient}})">
+            <summary>
+            Create a connection pool with specified configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.FromConfig(VedaDB.VedaConfig)">
+            <summary>
+            Create a connection pool from a VedaConfig.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.AcquireAsync(System.Threading.CancellationToken)">
+            <summary>
+            Acquire a connection from the pool.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.AcquirePooledAsync(System.Threading.CancellationToken)">
+            <summary>
+            Acquire a connection with automatic return on dispose.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.Release(VedaDB.VedaClient)">
+            <summary>
+            Release a connection back to the pool.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.ReleaseAsync(VedaDB.VedaClient)">
+            <summary>
+            Release a connection back to the pool asynchronously.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaConnectionPool.DrainAsync">
+            <summary>
+            Drain all connections from the pool.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaCursor">
+            <summary>
+            Streaming cursor for large result sets.
+            Fetches rows in batches to minimize memory usage.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCursor.TotalRowsReturned">
+            <summary>
+            Total rows returned so far.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaCursor.IsFinished">
+            <summary>
+            Whether the cursor has finished reading.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCursor.#ctor(VedaDB.VedaClient,System.String,System.Object[],System.Int32)">
+            <summary>
+            Create a streaming cursor.
+            </summary>
+            <param name="client">VedaDB client.</param>
+            <param name="sql">SQL query.</param>
+            <param name="parameters">Query parameters.</param>
+            <param name="batchSize">Number of rows to fetch per batch.</param>
+        </member>
+        <member name="M:VedaDB.VedaCursor.ReadNextBatchAsync(System.Threading.CancellationToken)">
+            <summary>
+            Read the next batch of rows.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCursor.ReadAllAsync(System.Threading.CancellationToken)">
+            <summary>
+            Read all remaining rows into a list.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaCursor.GetAsyncEnumerator(System.Threading.CancellationToken)">
+            <summary>
+            Get the IAsyncEnumerator for streaming.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaException">
+            <summary>
+            Base exception for all VedaDB errors.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaConnectionException">
+            <summary>
+            Thrown when a connection to VedaDB fails or is lost.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaQueryException">
+            <summary>
+            Thrown when VedaDB returns a query error.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaCircuitBreakerOpenException">
+            <summary>
+            Thrown when a circuit breaker is open.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaRetryExhaustedException">
+            <summary>
+            Thrown when all retries are exhausted.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaFailoverException">
+            <summary>
+            Thrown when a failover operation fails.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPoolExhaustedException">
+            <summary>
+            Thrown when the connection pool is exhausted.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaBulkInsertException">
+            <summary>
+            Thrown when a bulk insert operation fails.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaUriParseException">
+            <summary>
+            Thrown when a URI parse operation fails.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaInterceptorException">
+            <summary>
+            Thrown when an interceptor rejects an operation.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaFailoverConfig">
+            <summary>
+            Configuration for failover behavior.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailoverConfig.FailoverNodes">
+            <summary>
+            List of failover nodes in priority order.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailoverConfig.MaxFailoverAttempts">
+            <summary>
+            Maximum number of failover attempts. Default is 3.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailoverConfig.FailoverDelay">
+            <summary>
+            Delay between failover attempts. Default is 5 seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailoverConfig.AutoFailback">
+            <summary>
+            Whether to automatically fail back to the primary when it recovers.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailoverConfig.FailbackCheckInterval">
+            <summary>
+            Health check interval for failback detection. Default is 30 seconds.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaFailover">
+            <summary>
+            Failover manager for VedaDB connections.
+            Automatically switches to backup nodes when the primary fails.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailover.CurrentClient">
+            <summary>
+            The currently active client.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailover.IsFailoverActive">
+            <summary>
+            Whether the connection is using a failover node (not primary).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaFailover.CurrentNodeIndex">
+            <summary>
+            Index of the current node (0 = primary).
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaFailover.FailoverOccurred">
+            <summary>
+            Event raised when failover occurs.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaFailover.FailbackOccurred">
+            <summary>
+            Event raised when failback to primary occurs.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaFailover.#ctor(VedaDB.VedaFailoverConfig,System.String,System.Int32)">
+            <summary>
+            Create a failover manager.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaFailover.InitializeAsync(System.Threading.CancellationToken)">
+            <summary>
+            Initialize the failover manager, connecting to the primary.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaFailover.ExecuteAsync``1(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken)">
+            <summary>
+            Execute an operation with automatic failover.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaFailover.ExecuteAsync(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task},System.Threading.CancellationToken)">
+            <summary>
+            Execute an operation without return value with automatic failover.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaFailover.FailoverAsync(System.Threading.CancellationToken)">
+            <summary>
+            Manually trigger failover to the next available node.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaFailover.FailbackAsync(System.Threading.CancellationToken)">
+            <summary>
+            Manually failback to the primary node.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaHealthStatus">
+            <summary>
+            Health status of a VedaDB node.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.IsHealthy">
+            <summary>
+            Whether the node is healthy.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.Host">
+            <summary>
+            Server host.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.Port">
+            <summary>
+            Server port.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.ResponseTime">
+            <summary>
+            Response time of the last health check.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.LastChecked">
+            <summary>
+            Timestamp of the last health check.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.Error">
+            <summary>
+            Error message if unhealthy.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.ConsecutiveFailures">
+            <summary>
+            Number of consecutive failures.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthStatus.ConsecutiveSuccesses">
+            <summary>
+            Number of consecutive successes.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaHealthCheckerConfig">
+            <summary>
+            Configuration for health checking.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthCheckerConfig.CheckInterval">
+            <summary>
+            Interval between health checks. Default is 10 seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthCheckerConfig.CheckTimeout">
+            <summary>
+            Timeout for each health check. Default is 5 seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthCheckerConfig.UnhealthyThreshold">
+            <summary>
+            Number of consecutive failures before marking unhealthy. Default is 3.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaHealthCheckerConfig.HealthyThreshold">
+            <summary>
+            Number of consecutive successes before marking healthy. Default is 2.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaHealthChecker">
+            <summary>
+            Health checker for VedaDB nodes. Periodically pings servers and tracks health status.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaHealthChecker.StatusChanged">
+            <summary>
+            Event raised when a node's health status changes.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.#ctor">
+            <summary>
+            Create a health checker with default configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.#ctor(VedaDB.VedaHealthCheckerConfig)">
+            <summary>
+            Create a health checker with specified configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.RegisterNode(System.String,System.Int32)">
+            <summary>
+            Register a node for health checking.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.UnregisterNode(System.String,System.Int32)">
+            <summary>
+            Unregister a node from health checking.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.GetStatus(System.String,System.Int32)">
+            <summary>
+            Get the health status of a node.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.GetAllStatuses">
+            <summary>
+            Get all health statuses.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.GetHealthyNodes">
+            <summary>
+            Get only healthy nodes.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.IsHealthy(System.String,System.Int32)">
+            <summary>
+            Check if a node is currently healthy.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaHealthChecker.CheckAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Perform a single health check on a node.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaInterceptorContext">
+            <summary>
+            Context for intercepted operations.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.Command">
+            <summary>
+            The SQL command being executed.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.Parameters">
+            <summary>
+            Parameters for the command.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.Operation">
+            <summary>
+            Operation type (query, execute, etc.).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.Data">
+            <summary>
+            Additional context data.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.IsHandled">
+            <summary>
+            Whether the operation was handled (skip further processing).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.HandledResult">
+            <summary>
+            Result to return if IsHandled is true.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorContext.HandledException">
+            <summary>
+            Exception to throw if IsHandled is true and this is set.
+            </summary>
+        </member>
+        <member name="T:VedaDB.IVedaInterceptor">
+            <summary>
+            Middleware interceptor for VedaDB operations.
+            Allows cross-cutting concerns like logging, authentication, and rate limiting.
+            </summary>
+        </member>
+        <member name="M:VedaDB.IVedaInterceptor.OnBeforeAsync(VedaDB.VedaInterceptorContext,System.Threading.CancellationToken)">
+            <summary>
+            Called before a command is executed.
+            </summary>
+        </member>
+        <member name="M:VedaDB.IVedaInterceptor.OnAfterAsync(VedaDB.VedaInterceptorContext,VedaDB.VedaResult,System.TimeSpan,System.Threading.CancellationToken)">
+            <summary>
+            Called after a command is executed.
+            </summary>
+        </member>
+        <member name="M:VedaDB.IVedaInterceptor.OnErrorAsync(VedaDB.VedaInterceptorContext,System.Exception,System.Threading.CancellationToken)">
+            <summary>
+            Called when an exception occurs.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaInterceptorPipeline">
+            <summary>
+            Pipeline of interceptors that process operations in order.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaInterceptorPipeline.Add(VedaDB.IVedaInterceptor)">
+            <summary>
+            Add an interceptor to the pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaInterceptorPipeline.Remove(VedaDB.IVedaInterceptor)">
+            <summary>
+            Remove an interceptor from the pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaInterceptorPipeline.ExecuteAsync(VedaDB.VedaInterceptorContext,System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{VedaDB.VedaResult}},System.Threading.CancellationToken)">
+            <summary>
+            Execute an operation through the interceptor pipeline.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaInterceptorPipeline.Count">
+            <summary>
+            Number of interceptors in the pipeline.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaLoggingInterceptor">
+            <summary>
+            Built-in logging interceptor.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoggingInterceptor.#ctor(System.Action{System.String})">
+            <summary>
+            Create a logging interceptor with the specified log action.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoggingInterceptor.#ctor">
+            <summary>
+            Create a logging interceptor that writes to Console.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaMetricsInterceptor">
+            <summary>
+            Built-in metrics interceptor.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaRetryInterceptor">
+            <summary>
+            Built-in retry interceptor.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryInterceptor.ExecuteWithRetryAsync(VedaDB.VedaInterceptorContext,System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{VedaDB.VedaResult}},System.Threading.CancellationToken)">
+            <summary>
+            Execute with retry through this interceptor.
+            </summary>
+        </member>
+        <member name="T:VedaDB.LoadBalanceStrategy">
+            <summary>
+            Strategy for selecting a node from the pool.
+            </summary>
+        </member>
+        <member name="F:VedaDB.LoadBalanceStrategy.RoundRobin">
+            <summary>Round-robin selection.</summary>
+        </member>
+        <member name="F:VedaDB.LoadBalanceStrategy.Random">
+            <summary>Random selection.</summary>
+        </member>
+        <member name="F:VedaDB.LoadBalanceStrategy.LeastConnections">
+            <summary>Least connections.</summary>
+        </member>
+        <member name="F:VedaDB.LoadBalanceStrategy.WeightedRoundRobin">
+            <summary>Weighted round-robin.</summary>
+        </member>
+        <member name="F:VedaDB.LoadBalanceStrategy.IPHash">
+            <summary>IP hash for sticky sessions.</summary>
+        </member>
+        <member name="T:VedaDB.VedaNode">
+            <summary>
+            A node in the load balancer pool.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaNode.Host">
+            <summary>
+            Node host.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaNode.Port">
+            <summary>
+            Node port.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaNode.Weight">
+            <summary>
+            Node weight (for weighted strategies).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaNode.IsHealthy">
+            <summary>
+            Whether the node is currently healthy.
+            </summary>
+        </member>
+        <member name="F:VedaDB.VedaNode.ActiveConnections">
+            <summary>
+            Current number of active connections.
+            </summary>
+        </member>
+        <member name="F:VedaDB.VedaNode.TotalRequests">
+            <summary>
+            Total requests handled.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaNode.Id">
+            <summary>
+            Node identifier.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaLoadBalancer">
+            <summary>
+            Load balancer for distributing requests across multiple VedaDB nodes.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.#ctor(VedaDB.LoadBalanceStrategy)">
+            <summary>
+            Create a load balancer.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.AddNode(System.String,System.Int32,System.Int32)">
+            <summary>
+            Add a node to the pool.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.RemoveNode(System.String,System.Int32)">
+            <summary>
+            Remove a node from the pool.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.SetNodeHealth(System.String,System.Int32,System.Boolean)">
+            <summary>
+            Update node health status.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.GetNodes">
+            <summary>
+            Get all registered nodes.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.GetHealthyNodes">
+            <summary>
+            Get only healthy nodes.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.SelectNode(System.String)">
+            <summary>
+            Select the next node based on the configured strategy.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.ReleaseNode(VedaDB.VedaNode)">
+            <summary>
+            Release a connection back to the pool, decrementing active count.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.ExecuteAsync``1(System.Func{VedaDB.VedaNode,System.Threading.Tasks.Task{``0}},System.String)">
+            <summary>
+            Execute an operation on a selected node.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaLoadBalancer.GetStats">
+            <summary>
+            Get pool statistics.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaLoadBalancerStats">
+            <summary>
+            Statistics for the load balancer.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaMetrics">
+            <summary>
+            Metrics collector for VedaDB driver operations.
+            Emits Prometheus-compatible text format for scraping.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaMetrics.Enabled">
+            <summary>
+            Whether metrics collection is enabled.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.Increment(System.String,System.Int64,System.Collections.Generic.Dictionary{System.String,System.String})">
+            <summary>
+            Increment a counter metric.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.Gauge(System.String,System.Double,System.Collections.Generic.Dictionary{System.String,System.String})">
+            <summary>
+            Set a gauge metric.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.Histogram(System.String,System.Double,System.Collections.Generic.Dictionary{System.String,System.String})">
+            <summary>
+            Record a value in a histogram.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.TimerStart(System.String)">
+            <summary>
+            Start a timer for an operation.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.TimerStop(System.String)">
+            <summary>
+            Stop a timer and record the duration in seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaMetrics.Counters">
+            <summary>
+            Get all counter values.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaMetrics.Gauges">
+            <summary>
+            Get all gauge values.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.Reset">
+            <summary>
+            Reset all metrics.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaMetrics.ExportPrometheus">
+            <summary>
+            Export metrics in Prometheus text format.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPipelineCommand">
+            <summary>
+            A single command in a pipeline.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineCommand.Sql">
+            <summary>
+            SQL command text.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineCommand.Parameters">
+            <summary>
+            Parameters for the command.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineCommand.IsWrite">
+            <summary>
+            Whether this is a write operation.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPipelineResult">
+            <summary>
+            Pipeline execution result.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineResult.Results">
+            <summary>
+            Results for each command in order.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineResult.Errors">
+            <summary>
+            Any errors that occurred.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineResult.CommandCount">
+            <summary>
+            Total number of commands.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineResult.SuccessCount">
+            <summary>
+            Number of successful commands.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineResult.AllSucceeded">
+            <summary>
+            Whether all commands succeeded.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipelineResult.Duration">
+            <summary>
+            Total duration of the pipeline.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPipeline">
+            <summary>
+            Command pipeline for batching multiple VedaDB operations.
+            Reduces round-trips by sending commands together.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipeline.Count">
+            <summary>
+            Number of commands in the pipeline.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPipeline.IsAtomic">
+            <summary>
+            Whether to execute as a transaction (all or nothing).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.#ctor(VedaDB.VedaClient)">
+            <summary>
+            Create a pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.AddQuery(System.String,System.Object[])">
+            <summary>
+            Add a query command to the pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.AddExecute(System.String,System.Object[])">
+            <summary>
+            Add a write command (INSERT/UPDATE/DELETE) to the pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.AddInsert(System.String,System.Collections.Generic.Dictionary{System.String,System.Object})">
+            <summary>
+            Add an INSERT command.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.AddUpdate(System.String,System.Collections.Generic.Dictionary{System.String,System.Object},System.String)">
+            <summary>
+            Add an UPDATE command.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.AddDelete(System.String,System.String)">
+            <summary>
+            Add a DELETE command.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.Atomic">
+            <summary>
+            Mark this pipeline as atomic (transactional).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.Clear">
+            <summary>
+            Clear all commands from the pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.ExecuteAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute all commands in the pipeline.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPipeline.ExecuteAndGetResultsAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute and return results as a list.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaProtocol">
+            <summary>
+            Low-level wire protocol handler for VedaDB communication.
+            Manages the TCP connection, TLS upgrade, and message framing.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaProtocol.Host">
+            <summary>
+            Server hostname or IP address.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaProtocol.Port">
+            <summary>
+            Server TCP port.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaProtocol.TimeoutMs">
+            <summary>
+            Connection timeout in milliseconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaProtocol.IsTls">
+            <summary>
+            Whether the connection uses TLS encryption.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaProtocol.IsConnected">
+            <summary>
+            Whether the connection is currently active.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaProtocol.IsAuthenticated">
+            <summary>
+            Whether the connection is authenticated.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaProtocol.MessageSent">
+            <summary>
+            Event raised when a message is sent.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaProtocol.MessageReceived">
+            <summary>
+            Event raised when a message is received.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.#ctor(System.String,System.Int32,System.Int32)">
+            <summary>
+            Create a new protocol handler.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.ConnectAsync(System.Threading.CancellationToken)">
+            <summary>
+            Connect to the server.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.Connect">
+            <summary>
+            Connect synchronously.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.UpgradeToTlsAsync(System.String,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Perform STARTTLS handshake and upgrade the connection to TLS.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.UpgradeToTls(System.String,System.Boolean)">
+            <summary>
+            Upgrade to TLS synchronously.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.AuthenticateAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Authenticate with the server using AUTH command.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.Authenticate(System.String,System.String)">
+            <summary>
+            Authenticate synchronously.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.SendAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Send a command and receive the response.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.Send(System.String)">
+            <summary>
+            Send a command synchronously.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.SendRawAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Send a raw line without parsing.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.ReconnectAsync(System.Threading.CancellationToken)">
+            <summary>
+            Reconnect to the server.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaProtocol.CloseAsync">
+            <summary>
+            Send a QUIT command and close the underlying connection.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaMessage">
+            <summary>
+            A pub/sub message from VedaDB.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaMessage.Channel">
+            <summary>
+            Channel name.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaMessage.Payload">
+            <summary>
+            Message payload.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaMessage.ReceivedAt">
+            <summary>
+            Timestamp when received.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaPubSub">
+            <summary>
+            Publish/Subscribe messaging for VedaDB.
+            Implements real-time message passing between clients.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaPubSub.MessageReceived">
+            <summary>
+            Event raised when a message is received on any channel.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaPubSub.Subscribed">
+            <summary>
+            Event raised when subscribed to a channel.
+            </summary>
+        </member>
+        <member name="E:VedaDB.VedaPubSub.Unsubscribed">
+            <summary>
+            Event raised when unsubscribed from a channel.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPubSub.IsListening">
+            <summary>
+            Whether the listener is running.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaPubSub.Channels">
+            <summary>
+            List of subscribed channels.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.#ctor(VedaDB.VedaClient)">
+            <summary>
+            Create a Pub/Sub instance.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.SubscribeAsync(System.String,System.Func{VedaDB.VedaMessage,System.Threading.Tasks.Task},System.Threading.CancellationToken)">
+            <summary>
+            Subscribe to a channel with a handler callback.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.SubscribeAsync(System.String,System.Action{VedaDB.VedaMessage},System.Threading.CancellationToken)">
+            <summary>
+            Subscribe to a channel with a synchronous handler.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.SubscribeAsync(System.Collections.Generic.IEnumerable{System.String},System.Func{VedaDB.VedaMessage,System.Threading.Tasks.Task},System.Threading.CancellationToken)">
+            <summary>
+            Subscribe to multiple channels at once.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.UnsubscribeAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Unsubscribe from a channel.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.PublishAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Publish a message to a channel.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.Publish(System.String,System.String)">
+            <summary>
+            Publish a message to a channel (synchronous).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.ListenAsync(System.Threading.CancellationToken)">
+            <summary>
+            Listen for messages on subscribed channels.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.OnMessageReceived(VedaDB.VedaMessage)">
+            <summary>
+            Process a received message.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaPubSub.UnsubscribeAllAsync(System.Threading.CancellationToken)">
+            <summary>
+            Unsubscribe from all channels.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaQueryBuilder">
+            <summary>
+            Fluent query builder for VedaDB.
+            Provides a type-safe, chainable API for constructing SQL queries.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.#ctor(VedaDB.VedaClient,System.String)">
+            <summary>
+            Create a query builder for a table.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Select(System.String[])">
+            <summary>
+            Select specific columns.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Distinct">
+            <summary>
+            Add DISTINCT modifier.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Where(System.String)">
+            <summary>
+            Add WHERE clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Where(System.String,System.Object)">
+            <summary>
+            Add WHERE column = value.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Where(System.String,System.String,System.Object)">
+            <summary>
+            Add WHERE column operator value.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.WhereIn(System.String,System.Collections.Generic.IEnumerable{System.Object})">
+            <summary>
+            Add WHERE IN clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.WhereLike(System.String,System.String)">
+            <summary>
+            Add WHERE LIKE clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.WhereNull(System.String)">
+            <summary>
+            Add WHERE NULL check.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.WhereNotNull(System.String)">
+            <summary>
+            Add WHERE NOT NULL check.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.OrderBy(System.String,System.Boolean)">
+            <summary>
+            Add ORDER BY clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Limit(System.Int32)">
+            <summary>
+            Add LIMIT clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Offset(System.Int32)">
+            <summary>
+            Add OFFSET clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Join(System.String,System.String,System.String)">
+            <summary>
+            Add INNER JOIN.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.LeftJoin(System.String,System.String,System.String)">
+            <summary>
+            Add LEFT JOIN.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.GroupBy(System.String[])">
+            <summary>
+            Add GROUP BY clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.Having(System.String)">
+            <summary>
+            Add HAVING clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.ForUpdate">
+            <summary>
+            Add FOR UPDATE clause.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.BuildSql">
+            <summary>
+            Build the SQL query string.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.ExecuteAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute the built query.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.FirstAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute and get first row, or null if empty.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.ScalarAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute and get a single scalar value.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.MapAsync``1(System.Func{System.Collections.Generic.Dictionary{System.String,System.String},``0},System.Threading.CancellationToken)">
+            <summary>
+            Execute and get mapped results.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.ToDictsAsync(System.Threading.CancellationToken)">
+            <summary>
+            Execute and get results as dictionaries.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.CountAsync(System.Threading.CancellationToken)">
+            <summary>
+            Count rows matching the current filters.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.ExistsAsync(System.Threading.CancellationToken)">
+            <summary>
+            Check if any rows match the current filters.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.InsertAsync(System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Build an INSERT query for this table.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.UpdateAsync(System.Collections.Generic.Dictionary{System.String,System.Object},System.Threading.CancellationToken)">
+            <summary>
+            Build an UPDATE query from current filters.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryBuilder.DeleteAsync(System.Threading.CancellationToken)">
+            <summary>
+            Build a DELETE query from current filters.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaQueryCacheConfig">
+            <summary>
+            Configuration for the query cache.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCacheConfig.MaxEntries">
+            <summary>
+            Maximum number of cached entries. Default is 1000.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCacheConfig.DefaultTtl">
+            <summary>
+            Default TTL for cached entries. Default is 60 seconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCacheConfig.Enabled">
+            <summary>
+            Whether caching is enabled. Default is true.
+            </summary>
+        </member>
+        <member name="T:VedaDB.CacheEntry">
+            <summary>
+            A cached entry with expiration.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaQueryCache">
+            <summary>
+            In-memory query cache for VedaDB results.
+            Provides time-based expiration and LRU eviction.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCache.HitCount">
+            <summary>
+            Number of cache hits.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCache.MissCount">
+            <summary>
+            Number of cache misses.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCache.Count">
+            <summary>
+            Current number of entries.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaQueryCache.HitRate">
+            <summary>
+            Cache hit rate (0.0 to 1.0).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.#ctor">
+            <summary>
+            Create a query cache with default configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.#ctor(VedaDB.VedaQueryCacheConfig)">
+            <summary>
+            Create a query cache with specified configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.Get(System.String,System.Object[])">
+            <summary>
+            Get a cached result if available and not expired.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.Set(System.String,VedaDB.VedaResult,System.Object[])">
+            <summary>
+            Cache a result for the default TTL.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.Set(System.String,VedaDB.VedaResult,System.TimeSpan,System.Object[])">
+            <summary>
+            Cache a result with a specific TTL.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.Invalidate(System.String,System.Object[])">
+            <summary>
+            Invalidate a cached entry.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.InvalidatePattern(System.String)">
+            <summary>
+            Invalidate all cache entries matching a pattern.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.Clear">
+            <summary>
+            Clear all cache entries.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaQueryCache.GetStats">
+            <summary>
+            Get cache statistics.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaQueryCacheStats">
+            <summary>
+            Statistics for the query cache.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaResult">
+            <summary>
+            Represents the result of a VedaDB query.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaResult.ToDicts">
+            <summary>
+            Convert rows to a list of dictionaries keyed by column name.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaResult.First">
+            <summary>
+            Get the first row as a dictionary, or null if empty.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaResult.Pluck(System.String)">
+            <summary>
+            Extract a single column's values as a list.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaResult.Scalar">
+            <summary>
+            Get a single scalar value from the first row, first column.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaResult.HasRows">
+            <summary>
+            Check if the result has any rows.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaResult.IsEmpty">
+            <summary>
+            Check if the result is empty (no rows).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaResult.Map``1(System.Func{System.Collections.Generic.Dictionary{System.String,System.String},``0})">
+            <summary>
+            Get rows as a list of strongly-typed objects using a mapper function.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaResult.MapFirst``1(System.Func{System.Collections.Generic.Dictionary{System.String,System.String},``0})">
+            <summary>
+            Get the first row mapped to a strongly-typed object, or default if empty.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaRetryConfig">
+            <summary>
+            Configuration for retry behavior with exponential backoff.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.MaxRetries">
+            <summary>
+            Maximum number of retry attempts. Default is 3.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.InitialDelayMs">
+            <summary>
+            Initial delay between retries in milliseconds. Default is 1000.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.BackoffMultiplier">
+            <summary>
+            Backoff multiplier. Default is 2.0 (exponential).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.MaxDelayMs">
+            <summary>
+            Maximum delay between retries in milliseconds. Default is 30000.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.JitterFactor">
+            <summary>
+            Optional jitter factor (0.0 to 1.0) to randomize delays. Default is 0.1.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.RetryableExceptions">
+            <summary>
+            Exception types that should trigger a retry.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryConfig.IsRetryable">
+            <summary>
+            Custom predicate to determine if an exception is retryable.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaRetryPolicy">
+            <summary>
+            Retry policy with exponential backoff for VedaDB operations.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.#ctor">
+            <summary>
+            Create a retry policy with default configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.#ctor(VedaDB.VedaRetryConfig)">
+            <summary>
+            Create a retry policy with the specified configuration.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.ExecuteAsync``1(System.Func{System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken)">
+            <summary>
+            Execute an async operation with retry.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.ExecuteAsync(System.Func{System.Threading.Tasks.Task},System.Threading.CancellationToken)">
+            <summary>
+            Execute an async operation without a return value.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.Execute``1(System.Func{``0})">
+            <summary>
+            Execute a sync operation with retry.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.CalculateDelay(System.Int32)">
+            <summary>
+            Calculate the delay for a given retry attempt.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRetryPolicy.IsRetryable(System.Exception)">
+            <summary>
+            Check if an exception is retryable.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryPolicy.Default">
+            <summary>
+            Create a default retry policy.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryPolicy.Aggressive">
+            <summary>
+            Create an aggressive retry policy with more retries and shorter delays.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRetryPolicy.Conservative">
+            <summary>
+            Create a conservative retry policy with fewer retries and longer delays.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaRWSplitConfig">
+            <summary>
+            Read/Write splitting configuration.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplitConfig.PrimaryHost">
+            <summary>
+            Primary (write) node host.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplitConfig.PrimaryPort">
+            <summary>
+            Primary (write) node port.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplitConfig.Replicas">
+            <summary>
+            Replica (read) nodes.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplitConfig.FallbackToPrimary">
+            <summary>
+            Whether to fallback to primary for reads if no replicas are available.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplitConfig.MaxReplicationLagMs">
+            <summary>
+            Replication lag threshold in milliseconds. 0 means no check.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaRWSplit">
+            <summary>
+            Read/Write splitter for VedaDB.
+            Routes write operations to the primary and read operations to replicas.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplit.Primary">
+            <summary>
+            The primary (write) client.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.#ctor(VedaDB.VedaRWSplitConfig)">
+            <summary>
+            Create a read/write splitter.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.#ctor(VedaDB.VedaClient,System.Collections.Generic.IEnumerable{VedaDB.VedaClient})">
+            <summary>
+            Create a read/write splitter with explicit clients.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.WriteAsync(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task{VedaDB.VedaResult}})">
+            <summary>
+            Execute a write operation on the primary.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.ReadAsync(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task{VedaDB.VedaResult}})">
+            <summary>
+            Execute a read operation on a replica (or primary if no replicas).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.WriteAsync``1(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task{``0}})">
+            <summary>
+            Execute a write operation that returns a different type.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.ReadAsync``1(System.Func{VedaDB.VedaClient,System.Threading.Tasks.Task{``0}})">
+            <summary>
+            Execute a read operation that returns a different type.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.AddReplica(System.String,System.Int32)">
+            <summary>
+            Add a new replica dynamically.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.RemoveReplica(System.String,System.Int32)">
+            <summary>
+            Remove a replica.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaRWSplit.GetReplicationLagAsync">
+            <summary>
+            Check replication lag on all replicas.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaRWSplit.ReplicaCount">
+            <summary>
+            Number of configured replicas.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaTlsConfig">
+            <summary>
+            TLS/SSL configuration for VedaDB connections.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.Enabled">
+            <summary>
+            Whether to use TLS encryption.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.ValidateCertificate">
+            <summary>
+            Whether to validate the server certificate.
+            Set to false only for development/testing.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.ClientCertificatePath">
+            <summary>
+            Path to a client certificate file (PFX format).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.ClientCertificatePassword">
+            <summary>
+            Password for the client certificate.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.CustomRootCertificates">
+            <summary>
+            Collection of custom root CA certificates for validation.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.Protocols">
+            <summary>
+            Allowed TLS protocol versions.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.CipherSuites">
+            <summary>
+            Cipher suites to allow (if supported by the runtime).
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaTlsConfig.CertificateValidationCallback">
+            <summary>
+            Callback for remote certificate validation.
+            If set, overrides ValidateCertificate.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaTlsConfig.EnabledConfig">
+            <summary>
+            Create a TLS configuration with defaults (enabled with validation).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaTlsConfig.DevelopmentConfig">
+            <summary>
+            Create a TLS configuration for development (no validation).
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaTlsConfig.DisabledConfig">
+            <summary>
+            Create a TLS configuration that is disabled.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaTlsConfig.LoadClientCertificate">
+            <summary>
+            Load a client certificate from the specified path.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaUri">
+            <summary>
+            Parsed VedaDB connection URI.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.Host">
+            <summary>
+            Server host.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.Port">
+            <summary>
+            Server port.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.Username">
+            <summary>
+            Username for authentication.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.Password">
+            <summary>
+            Password for authentication.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.Database">
+            <summary>
+            Database name.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.UseTls">
+            <summary>
+            Whether to use TLS.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.TimeoutMs">
+            <summary>
+            Connection timeout in milliseconds.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.PoolMinSize">
+            <summary>
+            Connection pool minimum size.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.PoolMaxSize">
+            <summary>
+            Connection pool maximum size.
+            </summary>
+        </member>
+        <member name="P:VedaDB.VedaUri.Options">
+            <summary>
+            Additional query parameters.
+            </summary>
+        </member>
+        <member name="T:VedaDB.VedaUriParser">
+            <summary>
+            Parses VedaDB connection URIs.
+            Format: vedadb://[user:pass@]host[:port][/database][?option=value&amp;...]
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaUriParser.Parse(System.String)">
+            <summary>
+            Parse a VedaDB connection URI.
+            </summary>
+            <param name="uri">Connection URI string.</param>
+            <returns>Parsed VedaUri object.</returns>
+            <exception cref="T:VedaDB.VedaUriParseException">Thrown when the URI is invalid.</exception>
+        </member>
+        <member name="M:VedaDB.VedaUriParser.ToConfig(VedaDB.VedaUri)">
+            <summary>
+            Build a VedaConfig from a parsed URI.
+            </summary>
+        </member>
+        <member name="M:VedaDB.VedaUriParser.ParseToConfig(System.String)">
+            <summary>
+            Parse a URI directly to a VedaConfig.
+            </summary>
+        </member>
+    </members>
+</doc>

@@ -1,0 +1,36 @@
+[package]
+name = "vedadb"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Official Rust driver for VedaDB - The Multi-Model Database Engine"
+license = "Apache-2.0"
+repository = "https://github.com/vedadb/vedadb"
+homepage = "https://github.com/vedadb/vedadb/tree/main/drivers/rust"
+documentation = "https://docs.rs/vedadb"
+readme = "README.md"
+keywords = ["vedadb", "database", "multi-model", "sql", "driver"]
+categories = ["database"]
+
+[dependencies]
+tokio = { version = "1", features = ["full"], optional = true }
+tokio-native-tls = { version = "0.3", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+url = "2.5"
+parking_lot = "0.12"
+metrics = { version = "0.22", optional = true }
+dashmap = "5.5"
+crossbeam = "0.8"
+async-trait = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[features]
+default = ["tokio", "async-trait", "futures", "tracing"]
+tokio = ["dep:tokio", "dep:tokio-native-tls"]
+metrics = ["dep:metrics"]
+
+[dev-dependencies]
+tokio-test = "0.4"
