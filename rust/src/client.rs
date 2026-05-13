@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crossbeam::channel::{bounded, Sender, Receiver};
+
 use crate::bulk::{BulkInserter, Pipeline};
 use crate::cursor::Cursor;
 use crate::error::VedaError;
@@ -160,10 +162,36 @@ impl VedaConfigBuilder {
     }
 }
 
-/// Core synchronous VedaDB client.
+/// Thread-safe handle for sending async operations to a background worker thread.
+pub struct VedaClientHandle {
+    cmd_tx: Sender<ClientCommand>,
+    connected: Arc<AtomicBool>,
+}
+
+/// Commands sent to the background worker thread.
+enum ClientCommand {
+    Query {
+        sql: String,
+        params: Option<Vec<Value>>,
+        resp: Sender<Result<VedaResult, VedaError>>,
+    },
+    Execute {
+        sql: String,
+        params: Option<Vec<Value>>,
+        resp: Sender<Result<u64, VedaError>>,
+    },
+    Ping {
+        resp: Sender<Result<Duration, VedaError>>,
+    },
+    Close,
+}
+
+/// Core synchronous VedaDB client with interior mutability for thread safety.
+/// All state is protected by Mutex, making the client both Send and Sync
+/// without any unsafe code.
 pub struct VedaClient {
     config: VedaConfig,
-    protocol: Option<Protocol>,
+    protocol: Mutex<Option<Protocol>>,
     connected: AtomicBool,
     transaction_active: AtomicBool,
 }
@@ -173,14 +201,14 @@ impl VedaClient {
     pub fn new(config: VedaConfig) -> Result<Self, VedaError> {
         Ok(VedaClient {
             config,
-            protocol: None,
+            protocol: Mutex::new(None),
             connected: AtomicBool::new(false),
             transaction_active: AtomicBool::new(false),
         })
     }
 
     /// Connect to the VedaDB server.
-    pub fn connect(&mut self) -> Result<(), VedaError> {
+    pub fn connect(&self) -> Result<(), VedaError> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let tcp = TcpStream::connect_timeout(
             &addr.parse().map_err(|e: std::net::AddrParseError| {
@@ -225,27 +253,38 @@ impl VedaClient {
             protocol.authenticate(username, password)?;
         }
 
-        self.protocol = Some(protocol);
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        *guard = Some(protocol);
+        drop(guard);
         self.connected.store(true, Ordering::SeqCst);
         Ok(())
     }
 
     /// Create and connect from a URI string.
-    pub fn from_uri(uri: &str) -> Result<Self, VedaError> {
+    pub fn from_uri(uri: &str) -> Result<Arc<Self>, VedaError> {
         let config = VedaConfig::from_uri(uri)?;
-        let mut client = VedaClient::new(config)?;
+        let client = VedaClient::new(config)?;
         client.connect()?;
-        Ok(client)
+        Ok(Arc::new(client))
     }
 
     /// Execute a query with optional parameters, returning a full result.
     pub fn query(
-        &mut self,
+        &self,
         sql: &str,
         params: Option<&[Value]>,
     ) -> Result<VedaResult, VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
 
         let cmd = Command::Query {
             sql: sql.to_string(),
@@ -253,6 +292,7 @@ impl VedaClient {
         };
 
         let response = protocol.send_command(&cmd)?;
+        drop(guard);
         match response.payload {
             ResponsePayload::Ok(result) => Ok(result),
             _ => Err(VedaError::Protocol(
@@ -262,9 +302,16 @@ impl VedaClient {
     }
 
     /// Execute a statement, returning affected row count.
-    pub fn execute(&mut self, sql: &str, params: Option<&[Value]>) -> Result<u64, VedaError> {
+    pub fn execute(&self, sql: &str, params: Option<&[Value]>) -> Result<u64, VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
 
         let cmd = Command::Execute {
             sql: sql.to_string(),
@@ -272,6 +319,7 @@ impl VedaClient {
         };
 
         let response = protocol.send_command(&cmd)?;
+        drop(guard);
         match response.payload {
             ResponsePayload::Ok(result) => Ok(result.row_count as u64),
             _ => Err(VedaError::Protocol(
@@ -281,17 +329,35 @@ impl VedaClient {
     }
 
     /// Send a raw SQL string (legacy protocol mode).
-    pub fn query_raw(&mut self, sql: &str) -> Result<VedaResult, VedaError> {
+    pub fn query_raw(&self, sql: &str) -> Result<VedaResult, VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
-        protocol.send_raw(sql)
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
+        let result = protocol.send_raw(sql)?;
+        drop(guard);
+        Ok(result)
     }
 
     /// Ping the server and return round-trip duration.
-    pub fn ping(&mut self) -> Result<Duration, VedaError> {
+    pub fn ping(&self) -> Result<Duration, VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
-        protocol.ping()
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
+        let result = protocol.ping()?;
+        drop(guard);
+        Ok(result)
     }
 
     /// Check if the client is connected.
@@ -300,15 +366,17 @@ impl VedaClient {
     }
 
     /// Close the connection gracefully.
-    pub fn close(&mut self) {
-        if let Some(ref mut protocol) = self.protocol {
+    pub fn close(&self) {
+        let mut guard = self.protocol.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(ref mut protocol) = guard.as_mut() {
             protocol.close();
         }
+        drop(guard);
         self.connected.store(false, Ordering::SeqCst);
     }
 
     /// Reconnect to the server.
-    pub fn reconnect(&mut self) -> Result<(), VedaError> {
+    pub fn reconnect(&self) -> Result<(), VedaError> {
         self.close();
         self.connect()
     }
@@ -316,36 +384,60 @@ impl VedaClient {
     // --- Transaction Management ---
 
     /// Begin a transaction.
-    pub fn begin(&mut self) -> Result<(), VedaError> {
+    pub fn begin(&self) -> Result<(), VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
         protocol.send_command(&Command::Begin)?;
+        drop(guard);
         self.transaction_active.store(true, Ordering::SeqCst);
         Ok(())
     }
 
     /// Commit the current transaction.
-    pub fn commit(&mut self) -> Result<(), VedaError> {
+    pub fn commit(&self) -> Result<(), VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
         protocol.send_command(&Command::Commit)?;
+        drop(guard);
         self.transaction_active.store(false, Ordering::SeqCst);
         Ok(())
     }
 
     /// Rollback the current transaction.
-    pub fn rollback(&mut self) -> Result<(), VedaError> {
+    pub fn rollback(&self) -> Result<(), VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
         protocol.send_command(&Command::Rollback)?;
+        drop(guard);
         self.transaction_active.store(false, Ordering::SeqCst);
         Ok(())
     }
 
     /// Execute a closure within a transaction.
-    pub fn transaction<F, R>(&mut self, f: F) -> Result<R, VedaError>
+    pub fn transaction<F, R>(&self, f: F) -> Result<R, VedaError>
     where
-        F: FnOnce(&mut Self) -> Result<R, VedaError>,
+        F: FnOnce(&Self) -> Result<R, VedaError>,
     {
         self.begin()?;
         match f(self) {
@@ -363,28 +455,44 @@ impl VedaClient {
     // --- Prepared Statements ---
 
     /// Prepare a named statement.
-    pub fn prepare(&mut self, name: &str, sql: &str) -> Result<(), VedaError> {
+    pub fn prepare(&self, name: &str, sql: &str) -> Result<(), VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
         protocol.send_command(&Command::Prepare {
             name: name.to_string(),
             sql: sql.to_string(),
         })?;
+        drop(guard);
         Ok(())
     }
 
     /// Execute a prepared statement with parameters.
     pub fn execute_prepared(
-        &mut self,
+        &self,
         name: &str,
         params: &[Value],
     ) -> Result<VedaResult, VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
         let resp = protocol.send_command(&Command::ExecutePrepared {
             name: name.to_string(),
             params: params.to_vec(),
         })?;
+        drop(guard);
         match resp.payload {
             ResponsePayload::Ok(result) => Ok(result),
             _ => Err(VedaError::Protocol(
@@ -394,12 +502,20 @@ impl VedaClient {
     }
 
     /// Deallocate a prepared statement.
-    pub fn deallocate(&mut self, name: &str) -> Result<(), VedaError> {
+    pub fn deallocate(&self, name: &str) -> Result<(), VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
         protocol.send_command(&Command::Deallocate {
             name: name.to_string(),
         })?;
+        drop(guard);
         Ok(())
     }
 
@@ -416,10 +532,19 @@ impl VedaClient {
     }
 
     /// Create a cursor for streaming results.
-    pub fn cursor(&mut self, sql: &str) -> Result<Cursor, VedaError> {
+    pub fn cursor(&self, sql: &str) -> Result<Cursor, VedaError> {
         self.ensure_connected()?;
-        let protocol = self.protocol.as_mut().unwrap();
-        Cursor::open(protocol, sql)
+        let mut guard = self.protocol.lock().map_err(|_| VedaError::Protocol(
+            "mutex poisoned".to_string(),
+        ))?;
+        let protocol = guard.as_mut().ok_or_else(|| VedaError::Connection {
+            message: "protocol not initialized".to_string(),
+            host: Some(self.config.host.clone()),
+            port: Some(self.config.port),
+        })?;
+        let result = Cursor::open(protocol, sql);
+        drop(guard);
+        result
     }
 
     /// Create a PubSub handle.
@@ -435,7 +560,7 @@ impl VedaClient {
     // --- Private Helpers ---
 
     fn ensure_connected(&self) -> Result<(), VedaError> {
-        if !self.connected.load(Ordering::SeqCst) || self.protocol.is_none() {
+        if !self.connected.load(Ordering::SeqCst) {
             return Err(VedaError::Connection {
                 message: "not connected".to_string(),
                 host: Some(self.config.host.clone()),
@@ -445,46 +570,70 @@ impl VedaClient {
         Ok(())
     }
 
-    /// Get a reference to the underlying protocol (for advanced use).
-    pub fn protocol(&mut self) -> Option<&mut Protocol> {
-        self.protocol.as_mut()
-    }
-
     /// Get the client configuration.
     pub fn config(&self) -> &VedaConfig {
         &self.config
     }
 
-    /// Insert a single row into a table.
+    /// Insert a single row into a table using parameterized queries.
+    /// SECURE: Uses server-side parameter binding to prevent SQL injection.
     pub fn insert(
-        &mut self,
+        &self,
         table: &str,
         data: &[(&str, &dyn std::fmt::Display)],
     ) -> Result<u64, VedaError> {
         if data.is_empty() {
             return Ok(0);
         }
+        // Validate table name to prevent injection
+        if !is_valid_identifier(table) {
+            return Err(VedaError::Query(format!(
+                "invalid table name: {}", table
+            )));
+        }
         let cols: Vec<&str> = data.iter().map(|(k, _)| *k).collect();
-        let vals: Vec<String> = data.iter().map(|(_, v)| format!("'{}'", v)).collect();
+        // Validate column names
+        for col in &cols {
+            if !is_valid_identifier(col) {
+                return Err(VedaError::Query(format!(
+                    "invalid column name: {}", col
+                )));
+            }
+        }
+        // Build parameterized query using ? placeholders
+        let placeholders: Vec<String> = (1..=data.len())
+            .map(|i| format!("${}", i))
+            .collect();
 
         let sql = format!(
             "INSERT INTO {} ({}) VALUES ({});",
             table,
             cols.join(", "),
-            vals.join(", ")
+            placeholders.join(", ")
         );
-        self.execute(&sql, None)
+
+        let values: Vec<Value> = data
+            .iter()
+            .map(|(_, v)| Value::String(v.to_string()))
+            .collect();
+
+        self.execute(&sql, Some(&values))
     }
 
     /// Select rows with optional clauses.
     pub fn select(
-        &mut self,
+        &self,
         table: &str,
         columns: Option<&str>,
         where_clause: Option<&str>,
         order_by: Option<&str>,
         limit: Option<u32>,
     ) -> Result<VedaResult, VedaError> {
+        if !is_valid_identifier(table) {
+            return Err(VedaError::Query(format!(
+                "invalid table name: {}", table
+            )));
+        }
         let mut sql = format!("SELECT {} FROM {}", columns.unwrap_or("*"), table);
         if let Some(w) = where_clause {
             sql.push_str(&format!(" WHERE {}", w));
@@ -500,9 +649,45 @@ impl VedaClient {
     }
 
     /// Execute DDL/DML and return the status message.
-    pub fn exec(&mut self, sql: &str) -> Result<String, VedaError> {
+    pub fn exec(&self, sql: &str) -> Result<String, VedaError> {
         let result = self.query(sql, None)?;
         Ok(result.get_message())
+    }
+
+    /// Spawn a background worker thread for async-style communication
+    /// using crossbeam channels. Returns a handle for sending commands.
+    pub fn spawn_async_worker(self: Arc<Self>) -> VedaClientHandle {
+        let (cmd_tx, cmd_rx): (Sender<ClientCommand>, Receiver<ClientCommand>) = bounded(1000);
+        let connected = Arc::new(AtomicBool::new(self.connected.load(Ordering::SeqCst)));
+        let connected_worker = Arc::clone(&connected);
+
+        thread::spawn(move || {
+            while let Ok(cmd) = cmd_rx.recv() {
+                match cmd {
+                    ClientCommand::Query { sql, params, resp } => {
+                        let p: Option<&[Value]> = params.as_deref();
+                        let result = self.query(&sql, p);
+                        let _ = resp.send(result);
+                    }
+                    ClientCommand::Execute { sql, params, resp } => {
+                        let p: Option<&[Value]> = params.as_deref();
+                        let result = self.execute(&sql, p);
+                        let _ = resp.send(result);
+                    }
+                    ClientCommand::Ping { resp } => {
+                        let result = self.ping();
+                        let _ = resp.send(result);
+                    }
+                    ClientCommand::Close => {
+                        self.close();
+                        connected_worker.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                }
+            }
+        });
+
+        VedaClientHandle { cmd_tx, connected }
     }
 }
 
@@ -512,6 +697,93 @@ impl Drop for VedaClient {
     }
 }
 
-// Send + Sync: VedaClient uses Mutex internally where needed
-unsafe impl Send for VedaClient {}
-unsafe impl Sync for VedaClient {}
+// VedaClient is naturally Send + Sync because all fields are:
+// - VedaConfig: Send + Sync (plain data)
+// - Mutex<Option<Protocol>>: Send + Sync (Mutex provides both)
+// - AtomicBool: Send + Sync
+// No unsafe code required.
+
+/// Validate a SQL identifier (table/column name) to prevent injection.
+fn is_valid_identifier(ident: &str) -> bool {
+    if ident.is_empty() {
+        return false;
+    }
+    let mut chars = ident.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Safe, asynchronous-style query via crossbeam channels.
+impl VedaClientHandle {
+    /// Execute a query asynchronously via the worker thread.
+    pub fn query_async(
+        &self,
+        sql: String,
+        params: Option<Vec<Value>>,
+    ) -> Result<VedaResult, VedaError> {
+        let (tx, rx) = bounded(1);
+        self.cmd_tx
+            .send(ClientCommand::Query { sql, params, resp: tx })
+            .map_err(|_| VedaError::Connection {
+                message: "async worker thread has shut down".to_string(),
+                host: None,
+                port: None,
+            })?;
+        rx.recv().map_err(|_| VedaError::Connection {
+            message: "async worker did not respond".to_string(),
+            host: None,
+            port: None,
+        })?
+    }
+
+    /// Execute a statement asynchronously.
+    pub fn execute_async(
+        &self,
+        sql: String,
+        params: Option<Vec<Value>>,
+    ) -> Result<u64, VedaError> {
+        let (tx, rx) = bounded(1);
+        self.cmd_tx
+            .send(ClientCommand::Execute { sql, params, resp: tx })
+            .map_err(|_| VedaError::Connection {
+                message: "async worker thread has shut down".to_string(),
+                host: None,
+                port: None,
+            })?;
+        rx.recv().map_err(|_| VedaError::Connection {
+            message: "async worker did not respond".to_string(),
+            host: None,
+            port: None,
+        })?
+    }
+
+    /// Ping asynchronously.
+    pub fn ping_async(&self) -> Result<Duration, VedaError> {
+        let (tx, rx) = bounded(1);
+        self.cmd_tx
+            .send(ClientCommand::Ping { resp: tx })
+            .map_err(|_| VedaError::Connection {
+                message: "async worker thread has shut down".to_string(),
+                host: None,
+                port: None,
+            })?;
+        rx.recv().map_err(|_| VedaError::Connection {
+            message: "async worker did not respond".to_string(),
+            host: None,
+            port: None,
+        })?
+    }
+
+    /// Close the async worker.
+    pub fn close(&self) {
+        let _ = self.cmd_tx.send(ClientCommand::Close);
+    }
+
+    /// Check if the worker is still connected.
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::SeqCst)
+    }
+}
