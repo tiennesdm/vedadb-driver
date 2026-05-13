@@ -121,12 +121,14 @@ class VedaClient
         $errno  = 0;
         $errstr = '';
 
-        $this->socket = @stream_socket_client(
+        $prevHandler = set_error_handler(function() { return true; });
+        $this->socket = stream_socket_client(
             "tcp://{$this->host}:{$this->port}",
             $errno,
             $errstr,
             $this->timeout,
         );
+        restore_error_handler();
 
         if ($this->socket === false) {
             throw new ConnectionException(
@@ -137,7 +139,7 @@ class VedaClient
         stream_set_timeout($this->socket, $this->timeout);
 
         // Read and discard welcome banner
-        @fgets($this->socket);
+        try { fgets($this->socket); } catch (\Throwable $e) { /* ignore banner read errors */ }
 
         // STARTTLS upgrade
         if ($this->tls) {
@@ -152,19 +154,19 @@ class VedaClient
 
     private function upgradeTLS(): void
     {
-        $written = @fwrite($this->socket, "STARTTLS\n");
+        $written = fwrite($this->socket, "STARTTLS\n");
         if ($written === false) {
             throw new ConnectionException('Failed to send STARTTLS command');
         }
 
-        $response = @fgets($this->socket);
+        $response = fgets($this->socket);
         if ($response === false) {
             throw new ConnectionException('Connection closed during STARTTLS');
         }
-
         $data = json_decode(trim($response), true);
-        if (isset($data['error'])) {
-            throw new ConnectionException("STARTTLS failed: {$data['error']}");
+        if (!is_array($data) || isset($data['error'])) {
+            $err = is_array($data) && isset($data['error']) ? $data['error'] : 'unknown';
+            throw new ConnectionException("STARTTLS failed: {$err}");
         }
 
         $tls = new VedaTLS(
@@ -178,19 +180,18 @@ class VedaClient
     private function doAuth(): void
     {
         $cmd = "AUTH {$this->username} {$this->password}\n";
-        $written = @fwrite($this->socket, $cmd);
+        $written = fwrite($this->socket, $cmd);
         if ($written === false) {
             throw new ConnectionException('Failed to send AUTH command');
         }
-
-        $response = @fgets($this->socket);
+        $response = fgets($this->socket);
         if ($response === false) {
             throw new ConnectionException('Connection closed during AUTH');
         }
-
         $data = json_decode(trim($response), true);
-        if (isset($data['error'])) {
-            throw new AuthException("Authentication failed: {$data['error']}");
+        if (!is_array($data) || isset($data['error'])) {
+            $err = is_array($data) && isset($data['error']) ? $data['error'] : 'unknown';
+            throw new AuthException("Authentication failed: {$err}");
         }
     }
 
@@ -240,15 +241,14 @@ class VedaClient
         $error = false;
 
         try {
-            $written = @fwrite($this->socket, $sql . "\n");
+            $written = fwrite($this->socket, $sql . "\n");
             if ($written === false) {
                 throw new ConnectionException('Failed to send query');
             }
-
-            $response = @fgets($this->socket);
+            $response = fgets($this->socket);
             if ($response === false) {
                 $meta = stream_get_meta_data($this->socket);
-                if ($meta['timed_out'] ?? false) {
+                if (isset($meta['timed_out']) && $meta['timed_out']) {
                     throw new TimeoutException('Query timed out');
                 }
                 throw new ConnectionException('Connection closed');
@@ -707,8 +707,8 @@ class VedaClient
     public function close(): void
     {
         if ($this->socket !== null) {
-            @fwrite($this->socket, "QUIT\n");
-            @fclose($this->socket);
+            try { fwrite($this->socket, "QUIT\n"); } catch (\Throwable $e) { /* ignore */ }
+            try { fclose($this->socket); } catch (\Throwable $e) { /* ignore */ }
             $this->socket = null;
         }
     }
