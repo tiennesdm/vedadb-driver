@@ -28,6 +28,8 @@
 //! - `interceptor` - Request/response interceptors
 //! - `cache` - Client-side caching
 
+#![forbid(unsafe_code)]
+
 // Module declarations - each maps to a source file in src/
 pub mod client;
 pub mod async_client;
@@ -53,7 +55,7 @@ pub mod interceptor;
 pub mod cache;
 
 // Re-export commonly used types at the crate root for convenience
-pub use client::{VedaClient, VedaConfig, VedaConfigBuilder};
+pub use client::{VedaClient, VedaConfig, VedaConfigBuilder, VedaClientHandle};
 pub use error::VedaError;
 pub use result::{Value, VedaResult, Row};
 pub use pool::{VedaPool, PooledClient, PoolStats};
