@@ -1,168 +1,136 @@
 # frozen_string_literal: true
 
-require "json"
-
 module VedaDB
-  # Change streams for real-time data change notifications.
+  # ChangeStream subscribes to table changes (CDC) from VedaDB.
   #
-  # Watches a table (or all tables) and yields change events:
-  #   db.watch("users").each do |event|
-  #     puts "#{event['type']}: #{event['data']}"
+  # @example
+  #   stream = client.watch("users", operations: ["INSERT", "UPDATE"], resume_from_lsn: 12345)
+  #   stream.each do |event|
+  #     puts "#{event["operation"]} on #{event["table"]}"
   #   end
-  #
-  # Block form:
-  #   db.watch("orders") do |stream|
-  #     stream.each { |event| process(event) }
-  #   end
-  #
-  # Filter by operation type:
-  #   db.watch("logs").on(:insert) { |ev| puts "New log: #{ev}" }
   class ChangeStream
-    include Enumerable
+    attr_reader :client, :table, :operations, :resume_from_lsn, :last_lsn
 
-    attr_reader :client, :table, :filters, :resume_token
-
-    def initialize(client, table = nil)
-      @client        = client
-      @table         = table
-      @filters       = []
-      @running       = false
-      @handlers      = Hash.new { |h, k| h[k] = [] }
-      @resume_token  = nil
-      @mutex         = Mutex.new
-      @buffer        = []
+    def initialize(client, table = nil, **options)
+      @client = client
+      @table = table
+      @operations = (options[:operations] || []).map(&:to_s).map(&:upcase)
+      @resume_from_lsn = options[:resume_from_lsn] || 0
+      @include_before = options[:include_before] || false
+      @poll_interval = options[:poll_interval] || 0.1
+      @last_lsn = @resume_from_lsn
+      @active = false
+      @mutex = Mutex.new
+      @listeners = []
     end
 
-    # Start watching and yield each change event.
-    #
-    # @yieldparam event [Hash] change event with keys: type, table, data, timestamp
-    def each
-      return enum_for(:each) unless block_given?
-
-      @mutex.synchronize { @running = true }
-
-      while @running
-        events = poll_changes
-        events.each do |event|
-          @resume_token = event["token"] if event["token"]
-
-          next unless @table.nil? || event["table"] == @table
-          next unless @filters.empty? || @filters.include?(event["type"].to_sym)
-
-          yield event
-        end
-
-        sleep 0.1 if events.empty?
-      end
+    def on_event(&block)
+      @listeners << block
     end
 
-    # Register a typed handler.
-    #
-    # @param type [Symbol] :insert, :update, :delete
-    # @yieldparam event [Hash]
-    def on(type, &block)
-      @handlers[type.to_sym] << block
-      self
-    end
-
-    # Add a filter for operation types.
-    #
-    # @param *types [Array<Symbol>] :insert, :update, :delete
-    def filter(*types)
-      @filters.concat(types.map(&:to_sym))
-      self
-    end
-
-    # Start the stream in a background thread.
-    #
-    # @return [Thread] the background thread
     def start
-      @mutex.synchronize { @running = true }
-
-      @thread = Thread.new do
-        each do |event|
-          dispatch_handlers(event)
-        end
+      @mutex.synchronize do
+        return self if @active
+        @active = true
       end
-
-      @thread
+      @thread = Thread.new { run_loop }
+      self
     end
 
-    # Stop the stream.
     def stop
-      @mutex.synchronize { @running = false }
+      @mutex.synchronize { @active = false }
       @thread&.join(2)
+      self
     end
 
-    # Is the stream currently running?
-    def running?
-      @mutex.synchronize { @running }
+    def active?
+      @mutex.synchronize { @active }
     end
 
-    # Close the stream.
-    def close
-      stop
-      @handlers.clear
-      @buffer.clear
+    def each
+      raise ArgumentError, "Block required" unless block_given?
+      start unless active?
+      loop do
+        break unless active?
+        event = poll
+        break unless event
+        yield event
+      end
     end
 
-    # Get the next single event (blocking).
-    #
-    # @return [Hash, nil]
-    def next_event
-      enum_for(:each).first
+    def poll(timeout: 5)
+      start unless active?
+      deadline = Time.now + timeout
+      loop do
+        return nil if Time.now > deadline
+        return nil unless active?
+        result = @client.query(build_sql)
+        (result.rows || []).each do |row|
+          event = parse_row(row, result.columns)
+          next if event.nil? || !matches_filter?(event)
+          @last_lsn = event["lsn"] || 0
+          @listeners.each { |l| l.call(event) rescue nil }
+          return event
+        end
+        sleep(@poll_interval)
+      end
+    end
+
+    def resume_token
+      { lsn: @last_lsn, table: @table, time: Time.now.to_i }.to_json
+    end
+
+    def resume_from_token(token)
+      parsed = JSON.parse(token)
+      @resume_from_lsn = parsed["lsn"] || 0
+      @last_lsn = @resume_from_lsn
+      @table = parsed["table"] if parsed["table"]
+      self
     end
 
     private
 
-    def poll_changes
-      sql = if @resume_token
-              "WATCH #{'TABLE ' + @table if @table} TOKEN '#{@resume_token}'"
-            else
-              "WATCH #{'TABLE ' + @table if @table}"
-            end
-
-      result = @client.query(sql + ";")
-      return [] unless result.rows && !result.rows.empty?
-
-      result.rows.map do |row|
-        parse_event(row)
-      end
-    rescue StandardError => e
-      @running = false if e.is_a?(ConnectionError)
-      []
-    end
-
-    def parse_event(row)
-      {
-        "type"      => row[0],
-        "table"     => row[1],
-        "data"      => parse_json(row[2]),
-        "timestamp" => row[3],
-        "token"     => row[4],
-      }
-    end
-
-    def parse_json(str)
-      return {} unless str
-
-      JSON.parse(str)
-    rescue JSON::ParserError
-      str
-    end
-
-    def dispatch_handlers(event)
-      type = event["type"]&.to_sym
-      handlers = @mutex.synchronize { @handlers[type]&.dup }
-      return unless handlers
-
-      handlers.each do |handler|
+    def run_loop
+      while active?
         begin
-          handler.call(event)
-        rescue StandardError => e
-          warn "[VedaDB::ChangeStream] handler error: #{e.message}"
+          result = @client.query(build_sql)
+          (result.rows || []).each do |row|
+            event = parse_row(row, result.columns)
+            next if event.nil? || !matches_filter?(event)
+            @last_lsn = event["lsn"] || 0
+            @listeners.each { |l| l.call(event) rescue nil }
+          end
+          sleep(@poll_interval)
+        rescue => e
+          sleep(1)
         end
       end
+    end
+
+    def build_sql
+      sql = "WATCH"
+      sql << " "#{@table}"" if @table
+      sql << " RESUME LSN #{@resume_from_lsn}" if @resume_from_lsn > 0
+      unless @operations.empty?
+        sql << " FILTER (#{@operations.join(",")})"
+      end
+      sql << ";"
+      sql
+    end
+
+    def parse_row(row, columns)
+      return nil if row.nil? || columns.nil?
+      event = {}
+      columns.each_with_index do |col, i|
+        event[col] = row[i] if i < row.length
+      end
+      event["operation"] ? event : nil
+    end
+
+    def matches_filter?(event)
+      return true if @operations.empty?
+      op = (event["operation"] || "").to_s.upcase
+      @operations.include?(op)
     end
   end
 end
