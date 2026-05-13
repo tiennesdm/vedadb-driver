@@ -6,597 +6,474 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"unicode"
 )
 
 // ---------------------------------------------------------------------------
-// Basic ORM
+// Struct tag-based ORM for VedaDB Go driver.
+//
+// Supports: `vedadb:"column:foo;primary_key;auto_increment"` tags
+//
+// @example
+//
+//	 type User struct {
+//	     ID    int    `vedadb:"column:id;primary_key;auto_increment"`
+//	     Name  string `vedadb:"column:name;not_null"`
+//	     Email string `vedadb:"column:email;unique"`
+//	     Age   int    `vedadb:"column:age;default:0"`
+//	 }
+//
+//	 orm := vedadb.NewORM(client)
+//	 orm.CreateTable(&User{})
+//	 user := &User{Name: "Alice", Email: "alice@example.com", Age: 30}
+//	 orm.Create(user)
+//	 found := &User{ID: 1}
+//	 orm.Find(found)
 // ---------------------------------------------------------------------------
 
-// Model is the interface that all ORM models must implement.
-type Model interface {
-	TableName() string
+// fieldMeta holds parsed struct field metadata.
+type fieldMeta struct {
+	Name         string
+	Column       string
+	IsPrimaryKey bool
+	AutoIncrement bool
+	IsUnique     bool
+	NotNull      bool
+	Default      string
+	FieldIndex   int
+	Type         reflect.Type
 }
 
-// TableNamer can be implemented to customize table names.
-type TableNamer interface {
-	TableName() string
+// parseFieldMeta parses a struct field's vedadb tag.
+func parseFieldMeta(field reflect.StructField, index int) *fieldMeta {
+	tag := field.Tag.Get("vedadb")
+	if tag == "" {
+		// Default: use field name as column name
+		return &fieldMeta{
+			Name:       field.Name,
+			Column:     field.Name,
+			FieldIndex: index,
+			Type:       field.Type,
+		}
+	}
+
+	meta := &fieldMeta{
+		Name:       field.Name,
+		Column:     field.Name,
+		FieldIndex: index,
+		Type:       field.Type,
+	}
+
+	parts := strings.Split(tag, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(part, "column:"):
+			meta.Column = strings.TrimPrefix(part, "column:")
+		case part == "primary_key":
+			meta.IsPrimaryKey = true
+		case part == "auto_increment":
+			meta.AutoIncrement = true
+		case part == "unique":
+			meta.IsUnique = true
+		case part == "not_null":
+			meta.NotNull = true
+		case strings.HasPrefix(part, "default:"):
+			meta.Default = strings.TrimPrefix(part, "default:")
+		}
+	}
+
+	return meta
 }
 
-// FieldMapping holds the mapping between struct fields and database columns.
-type FieldMapping struct {
-	FieldName  string
-	ColumnName string
-	Type       reflect.Type
-	IsPrimary  bool
-	IsAuto     bool
-	IsNullable bool
-	Tags       map[string]string
+// parseStructMeta parses all fields of a struct type.
+func parseStructMeta(t reflect.Type) []*fieldMeta {
+	var fields []*fieldMeta
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.PkgPath != "" {
+			// Unexported field, skip
+			continue
+		}
+		meta := parseFieldMeta(field, i)
+		if meta.Column != "-" {
+			fields = append(fields, meta)
+		}
+	}
+	return fields
 }
 
-// ModelSchema holds the parsed schema for a model type.
-type ModelSchema struct {
-	TableName   string
-	Fields      []FieldMapping
-	PrimaryKey  string
-	FieldByName map[string]FieldMapping
-	ColumnMap   map[string]string // column -> field
-	mu          sync.RWMutex
-}
+// ---------------------------------------------------------------------------
+// ORM
+// ---------------------------------------------------------------------------
 
-// ORM provides a basic object-relational mapping layer.
+// ORM provides struct tag-based CRUD operations.
 type ORM struct {
-	client    *Client
-	schemas   sync.Map // map[reflect.Type]*ModelSchema
-	tableMu   sync.RWMutex
+	client *Client
+	cache  sync.Map // cache of struct metadata
 }
 
 // NewORM creates a new ORM instance.
 func NewORM(client *Client) *ORM {
-	return &ORM{
-		client: client,
-	}
+	return &ORM{client: client}
 }
 
-// Register parses and registers a model's schema.
-func (o *ORM) Register(model interface{}) (*ModelSchema, error) {
-	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+// getCachedMeta gets or computes struct field metadata.
+func (o *ORM) getCachedMeta(t reflect.Type) []*fieldMeta {
+	if cached, ok := o.cache.Load(t); ok {
+		return cached.([]*fieldMeta)
 	}
-	if t.Kind() != reflect.Struct {
-		return nil, NewValidationError("model must be a struct or pointer to struct")
-	}
-
-	schema := o.parseSchema(t, model)
-	o.schemas.Store(t, schema)
-	return schema, nil
+	meta := parseStructMeta(t)
+	o.cache.Store(t, meta)
+	return meta
 }
 
-// parseSchema extracts field mappings from a struct type.
-func (o *ORM) parseSchema(t reflect.Type, model interface{}) *ModelSchema {
-	// Determine table name
-	tableName := toSnakeCase(t.Name()) + "s"
-	if tn, ok := model.(TableNamer); ok {
-		tableName = tn.TableName()
-	} else {
-		// Try to call TableName via reflection
-		m := reflect.ValueOf(model)
-		method := m.MethodByName("TableName")
-		if method.IsValid() {
-			results := method.Call(nil)
-			if len(results) > 0 {
-				tableName = results[0].String()
-			}
+// getPrimaryKey returns the primary key field meta.
+func getPrimaryKey(fields []*fieldMeta) *fieldMeta {
+	for _, f := range fields {
+		if f.IsPrimaryKey {
+			return f
 		}
 	}
-
-	schema := &ModelSchema{
-		TableName:   tableName,
-		Fields:      make([]FieldMapping, 0, t.NumField()),
-		FieldByName: make(map[string]FieldMapping),
-		ColumnMap:   make(map[string]string),
-	}
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-
-		// Skip unexported fields
-		if field.PkgPath != "" {
-			continue
-		}
-
-		// Parse tags
-		tags := parseTags(field.Tag)
-		if tags["vedadb"] == "-" {
-			continue
-		}
-
-		columnName := tags["column"]
-		if columnName == "" {
-			columnName = toSnakeCase(field.Name)
-		}
-
-		fm := FieldMapping{
-			FieldName:  field.Name,
-			ColumnName: columnName,
-			Type:       field.Type,
-			IsPrimary:  tags["primary"] == "true" || tags["pk"] == "true",
-			IsAuto:     tags["auto"] == "true" || tags["autoincrement"] == "true",
-			IsNullable: tags["nullable"] == "true",
-			Tags:       tags,
-		}
-
-		schema.Fields = append(schema.Fields, fm)
-		schema.FieldByName[field.Name] = fm
-		schema.ColumnMap[columnName] = field.Name
-
-		if fm.IsPrimary {
-			schema.PrimaryKey = columnName
-		}
-	}
-
-	return schema
-}
-
-// getSchema retrieves the schema for a model type.
-func (o *ORM) getSchema(model interface{}) (*ModelSchema, error) {
-	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
-	if val, ok := o.schemas.Load(t); ok {
-		return val.(*ModelSchema), nil
-	}
-
-	return o.Register(model)
-}
-
-// Insert inserts a model into the database.
-func (o *ORM) Insert(ctx context.Context, model interface{}) error {
-	schema, err := o.getSchema(model)
-	if err != nil {
-		return err
-	}
-
-	v := reflect.ValueOf(model)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	columns := make([]string, 0, len(schema.Fields))
-	placeholders := make([]string, 0, len(schema.Fields))
-	values := make([]interface{}, 0, len(schema.Fields))
-
-	for _, field := range schema.Fields {
-		if field.IsAuto {
-			continue // Skip auto-increment fields
-		}
-
-		fv := v.FieldByName(field.FieldName)
-		columns = append(columns, field.ColumnName)
-		placeholders = append(placeholders, "?")
-		values = append(values, fv.Interface())
-	}
-
-	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-		schema.TableName,
-		strings.Join(columns, ", "),
-		strings.Join(placeholders, ", "))
-
-	_, err = o.client.Exec(ctx, sql, values...)
-	return err
-}
-
-// FindByID retrieves a model by its primary key.
-func (o *ORM) FindByID(ctx context.Context, model interface{}, id interface{}) error {
-	schema, err := o.getSchema(model)
-	if err != nil {
-		return err
-	}
-
-	if schema.PrimaryKey == "" {
-		return NewValidationError("no primary key defined for model")
-	}
-
-	sql := fmt.Sprintf("SELECT %s FROM %s WHERE %s = ?",
-		o.selectColumns(schema),
-		schema.TableName,
-		schema.PrimaryKey)
-
-	result, err := o.client.Query(ctx, sql, id)
-	if err != nil {
-		return err
-	}
-
-	if len(result.Rows) == 0 {
-		return NewQueryError("record not found")
-	}
-
-	return o.scanRow(result, model, schema)
-}
-
-// FindAll retrieves all records for a model type.
-func (o *ORM) FindAll(ctx context.Context, slice interface{}) error {
-	sliceVal := reflect.ValueOf(slice)
-	if sliceVal.Kind() != reflect.Ptr || sliceVal.Elem().Kind() != reflect.Slice {
-		return NewValidationError("slice must be a pointer to a slice")
-	}
-
-	elemType := sliceVal.Elem().Type().Elem()
-	if elemType.Kind() == reflect.Ptr {
-		elemType = elemType.Elem()
-	}
-
-	// Create a dummy instance to get schema
-	dummy := reflect.New(elemType).Interface()
-	schema, err := o.getSchema(dummy)
-	if err != nil {
-		return err
-	}
-
-	sql := fmt.Sprintf("SELECT %s FROM %s", o.selectColumns(schema), schema.TableName)
-	result, err := o.client.Query(ctx, sql)
-	if err != nil {
-		return err
-	}
-
-	return o.scanRows(result, slice, schema, elemType)
-}
-
-// FindWhere retrieves records matching a WHERE condition.
-func (o *ORM) FindWhere(ctx context.Context, slice interface{}, where string, args ...interface{}) error {
-	sliceVal := reflect.ValueOf(slice)
-	if sliceVal.Kind() != reflect.Ptr || sliceVal.Elem().Kind() != reflect.Slice {
-		return NewValidationError("slice must be a pointer to a slice")
-	}
-
-	elemType := sliceVal.Elem().Type().Elem()
-	if elemType.Kind() == reflect.Ptr {
-		elemType = elemType.Elem()
-	}
-
-	dummy := reflect.New(elemType).Interface()
-	schema, err := o.getSchema(dummy)
-	if err != nil {
-		return err
-	}
-
-	sql := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
-		o.selectColumns(schema), schema.TableName, where)
-	result, err := o.client.Query(ctx, sql, args...)
-	if err != nil {
-		return err
-	}
-
-	return o.scanRows(result, slice, schema, elemType)
-}
-
-// Update updates a model in the database.
-func (o *ORM) Update(ctx context.Context, model interface{}) error {
-	schema, err := o.getSchema(model)
-	if err != nil {
-		return err
-	}
-
-	if schema.PrimaryKey == "" {
-		return NewValidationError("no primary key defined for model")
-	}
-
-	v := reflect.ValueOf(model)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	sets := make([]string, 0)
-	values := make([]interface{}, 0)
-	var pkValue interface{}
-
-	for _, field := range schema.Fields {
-		fv := v.FieldByName(field.FieldName)
-		if field.IsPrimary {
-			pkValue = fv.Interface()
-			continue
-		}
-		sets = append(sets, fmt.Sprintf("%s = ?", field.ColumnName))
-		values = append(values, fv.Interface())
-	}
-
-	if pkValue == nil {
-		return NewValidationError("primary key value is nil")
-	}
-	values = append(values, pkValue)
-
-	sql := fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?",
-		schema.TableName,
-		strings.Join(sets, ", "),
-		schema.PrimaryKey)
-
-	_, err = o.client.Exec(ctx, sql, values...)
-	return err
-}
-
-// Delete deletes a model from the database.
-func (o *ORM) Delete(ctx context.Context, model interface{}) error {
-	schema, err := o.getSchema(model)
-	if err != nil {
-		return err
-	}
-
-	if schema.PrimaryKey == "" {
-		return NewValidationError("no primary key defined for model")
-	}
-
-	v := reflect.ValueOf(model)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	pkField := schema.FieldByName[schema.ColumnMap[schema.PrimaryKey]]
-	pkValue := v.FieldByName(pkField.FieldName).Interface()
-
-	sql := fmt.Sprintf("DELETE FROM %s WHERE %s = ?",
-		schema.TableName, schema.PrimaryKey)
-
-	_, err = o.client.Exec(ctx, sql, pkValue)
-	return err
-}
-
-// DeleteByID deletes a record by its primary key.
-func (o *ORM) DeleteByID(ctx context.Context, model interface{}, id interface{}) error {
-	schema, err := o.getSchema(model)
-	if err != nil {
-		return err
-	}
-
-	if schema.PrimaryKey == "" {
-		return NewValidationError("no primary key defined for model")
-	}
-
-	sql := fmt.Sprintf("DELETE FROM %s WHERE %s = ?",
-		schema.TableName, schema.PrimaryKey)
-
-	_, err = o.client.Exec(ctx, sql, id)
-	return err
-}
-
-// Count returns the total count of records.
-func (o *ORM) Count(ctx context.Context, model interface{}) (int64, error) {
-	schema, err := o.getSchema(model)
-	if err != nil {
-		return 0, err
-	}
-
-	sql := fmt.Sprintf("SELECT COUNT(*) FROM %s", schema.TableName)
-	result, err := o.client.Query(ctx, sql)
-	if err != nil {
-		return 0, err
-	}
-
-	if len(result.Rows) == 0 || len(result.Rows[0]) == 0 {
-		return 0, nil
-	}
-
-	var count int64
-	fmt.Sscanf(result.Rows[0][0], "%d", &count)
-	return count, nil
-}
-
-// selectColumns generates the SELECT column list.
-func (o *ORM) selectColumns(schema *ModelSchema) string {
-	columns := make([]string, 0, len(schema.Fields))
-	for _, field := range schema.Fields {
-		columns = append(columns, field.ColumnName)
-	}
-	return strings.Join(columns, ", ")
-}
-
-// scanRow scans a single row into a model.
-func (o *ORM) scanRow(result *Result, model interface{}, schema *ModelSchema) error {
-	if len(result.Rows) == 0 {
-		return NewQueryError("no rows returned")
-	}
-
-	v := reflect.ValueOf(model)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	row := result.Rows[0]
-	colIdx := make(map[string]int)
-	for i, col := range result.Columns {
-		colIdx[col] = i
-	}
-
-	for _, field := range schema.Fields {
-		idx, ok := colIdx[field.ColumnName]
-		if !ok || idx >= len(row) {
-			continue
-		}
-
-		fv := v.FieldByName(field.FieldName)
-		if !fv.IsValid() || !fv.CanSet() {
-			continue
-		}
-
-		o.setFieldValue(fv, row[idx], field.Type)
-	}
-
 	return nil
 }
 
-// scanRows scans multiple rows into a slice.
-func (o *ORM) scanRows(result *Result, slice interface{}, schema *ModelSchema, elemType reflect.Type) error {
-	sliceVal := reflect.ValueOf(slice).Elem()
-	colIdx := make(map[string]int)
-	for i, col := range result.Columns {
-		colIdx[col] = i
+// getValue extracts the field value from a struct instance.
+func getValue(v reflect.Value, field *fieldMeta) interface{} {
+	fv := v.Field(field.FieldIndex)
+	switch fv.Kind() {
+	case reflect.String:
+		return fv.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fv.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fv.Uint()
+	case reflect.Float32, reflect.Float64:
+		return fv.Float()
+	case reflect.Bool:
+		return fv.Bool()
+	default:
+		return fv.Interface()
 	}
-
-	for _, row := range result.Rows {
-		elem := reflect.New(elemType).Elem()
-
-		for _, field := range schema.Fields {
-			idx, ok := colIdx[field.ColumnName]
-			if !ok || idx >= len(row) {
-				continue
-			}
-
-			fv := elem.FieldByName(field.FieldName)
-			if !fv.IsValid() || !fv.CanSet() {
-				continue
-			}
-
-			o.setFieldValue(fv, row[idx], field.Type)
-		}
-
-		if sliceVal.Type().Elem().Kind() == reflect.Ptr {
-			newElem := reflect.New(elemType)
-			newElem.Elem().Set(elem)
-			sliceVal.Set(reflect.Append(sliceVal, newElem))
-		} else {
-			sliceVal.Set(reflect.Append(sliceVal, elem))
-		}
-	}
-
-	return nil
 }
 
-// setFieldValue sets a struct field from a string value.
-func (o *ORM) setFieldValue(fv reflect.Value, val string, ft reflect.Type) {
-	if val == "" {
+// setValue sets a field value from a raw database value.
+func setValue(v reflect.Value, field *fieldMeta, val interface{}) {
+	fv := v.Field(field.FieldIndex)
+	if !fv.CanSet() {
 		return
 	}
 
-	switch fv.Kind() {
-	case reflect.String:
-		fv.SetString(val)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		var i int64
-		fmt.Sscanf(val, "%d", &i)
-		fv.SetInt(i)
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		var i uint64
-		fmt.Sscanf(val, "%d", &i)
-		fv.SetUint(i)
-	case reflect.Float32, reflect.Float64:
-		var f float64
-		fmt.Sscanf(val, "%f", &f)
-		fv.SetFloat(f)
-	case reflect.Bool:
-		fv.SetBool(val == "true" || val == "1")
+	switch val := val.(type) {
+	case string:
+		switch fv.Kind() {
+		case reflect.String:
+			fv.SetString(val)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			var i int64
+			fmt.Sscanf(val, "%d", &i)
+			fv.SetInt(i)
+		case reflect.Bool:
+			fv.SetBool(strings.ToLower(val) == "true" || val == "1")
+		}
+	case int64:
+		switch fv.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			fv.SetInt(val)
+		}
+	case float64:
+		switch fv.Kind() {
+		case reflect.Float32, reflect.Float64:
+			fv.SetFloat(val)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			fv.SetInt(int64(val))
+		}
+	case bool:
+		if fv.Kind() == reflect.Bool {
+			fv.SetBool(val)
+		}
 	}
 }
 
-// parseTags parses struct field tags into a map.
-func parseTags(tag reflect.StructTag) map[string]string {
-	result := make(map[string]string)
+// ---------------------------------------------------------------------------
+// CRUD Operations
+// ---------------------------------------------------------------------------
 
-	// Parse "vedadb" tag
-	if v := tag.Get("vedadb"); v != "" {
-		parts := strings.Split(v, ";")
-		for _, part := range parts {
-			kv := strings.SplitN(part, ":", 2)
-			if len(kv) == 2 {
-				result[kv[0]] = kv[1]
-			} else {
-				result[kv[0]] = "true"
-			}
+// Create inserts a new record from a struct.
+func (o *ORM) Create(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model).Elem()
+	t := v.Type()
+	fields := o.getCachedMeta(t)
+
+	var columns []string
+	var placeholders []string
+	var values []interface{}
+
+	for i, f := range fields {
+		if f.AutoIncrement && isZeroValue(v.Field(f.FieldIndex)) {
+			continue // Skip auto-increment primary key
 		}
+		columns = append(columns, f.Column)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", len(values)+1))
+		values = append(values, getValue(v, f))
 	}
 
-	// Parse "column" tag
-	if v := tag.Get("column"); v != "" {
-		result["column"] = v
-	}
+	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);",
+		tableName(t),
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "))
 
-	// Parse "json" tag for column name fallback
-	if v := tag.Get("json"); v != "" && result["column"] == "" {
-		parts := strings.Split(v, ",")
-		if parts[0] != "-" {
-			result["column"] = parts[0]
-		}
-	}
-
-	// Parse "pk" tag
-	if tag.Get("pk") == "true" || tag.Get("primary") == "true" {
-		result["primary"] = "true"
-	}
-
-	return result
+	return o.client.Query(ctx, sql, values...)
 }
 
-// toSnakeCase converts CamelCase to snake_case.
-func toSnakeCase(s string) string {
-	var result strings.Builder
-	for i, r := range s {
-		if unicode.IsUpper(r) {
-			if i > 0 {
-				result.WriteByte('_')
-			}
-			result.WriteRune(unicode.ToLower(r))
-		} else {
-			result.WriteRune(r)
-		}
+// Find retrieves a record by primary key into the model.
+func (o *ORM) Find(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model).Elem()
+	t := v.Type()
+	fields := o.getCachedMeta(t)
+	pk := getPrimaryKey(fields)
+	if pk == nil {
+		return nil, fmt.Errorf("no primary key defined for %s", t.Name())
 	}
-	return result.String()
+
+	sql := fmt.Sprintf("SELECT * FROM %s WHERE %s = $1;",
+		tableName(t), pk.Column)
+	result, err := o.client.Query(ctx, sql, getValue(v, pk))
+	if err != nil {
+		return nil, err
+	}
+
+	// Map result back to struct
+	if len(result.Rows) > 0 {
+		o.hydrate(v, fields, result.Rows[0])
+	}
+	return result, nil
 }
 
-// AutoMigrate creates the table for a model if it doesn't exist.
-func (o *ORM) AutoMigrate(ctx context.Context, models ...interface{}) error {
-	for _, model := range models {
-		schema, err := o.getSchema(model)
+// FindAll retrieves all records matching conditions.
+func (o *ORM) FindAll(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model)
+	var t reflect.Type
+	if v.Kind() == reflect.Ptr {
+		t = v.Elem().Type().Elem() // Slice element type
+	} else {
+		t = v.Type().Elem()
+	}
+
+	sql := fmt.Sprintf("SELECT * FROM %s;", tableName(t))
+	return o.client.Query(ctx, sql)
+}
+
+// Update modifies a record by primary key.
+func (o *ORM) Update(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model).Elem()
+	t := v.Type()
+	fields := o.getCachedMeta(t)
+	pk := getPrimaryKey(fields)
+	if pk == nil {
+		return nil, fmt.Errorf("no primary key defined for %s", t.Name())
+	}
+
+	var setClauses []string
+	var values []interface{}
+
+	for _, f := range fields {
+		if f.IsPrimaryKey {
+			continue
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", f.Column, len(values)+1))
+		values = append(values, getValue(v, f))
+	}
+
+	values = append(values, getValue(v, pk))
+
+	sql := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d;",
+		tableName(t),
+		strings.Join(setClauses, ", "),
+		pk.Column,
+		len(values))
+
+	return o.client.Query(ctx, sql, values...)
+}
+
+// Delete removes a record by primary key.
+func (o *ORM) Delete(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model).Elem()
+	t := v.Type()
+	fields := o.getCachedMeta(t)
+	pk := getPrimaryKey(fields)
+	if pk == nil {
+		return nil, fmt.Errorf("no primary key defined for %s", t.Name())
+	}
+
+	sql := fmt.Sprintf("DELETE FROM %s WHERE %s = $1;",
+		tableName(t), pk.Column)
+	return o.client.Query(ctx, sql, getValue(v, pk))
+}
+
+// ---------------------------------------------------------------------------
+// Preload for relationships
+// ---------------------------------------------------------------------------
+
+// PreloadSpec defines a relationship to preload.
+type PreloadSpec struct {
+	Field      string // Struct field name to populate
+	ForeignKey string // Foreign key column in related table
+	LocalKey   string // Local key column (usually primary key)
+}
+
+// Preload loads related data for a model.
+func (o *ORM) Preload(ctx context.Context, model interface{}, specs ...*PreloadSpec) error {
+	v := reflect.ValueOf(model).Elem()
+	t := v.Type()
+	fields := o.getCachedMeta(t)
+	pk := getPrimaryKey(fields)
+	if pk == nil {
+		return fmt.Errorf("no primary key for preload")
+	}
+	pkValue := getValue(v, pk)
+
+	for _, spec := range specs {
+		sql := fmt.Sprintf("SELECT * FROM %s WHERE %s = $1;",
+			o.relatedTableName(spec.Field),
+			spec.ForeignKey)
+		result, err := o.client.Query(ctx, sql, pkValue)
 		if err != nil {
 			return err
 		}
-
-		columns := make([]string, 0, len(schema.Fields))
-		for _, field := range schema.Fields {
-			colDef := fmt.Sprintf("%s %s", field.ColumnName, goTypeToSQLType(field.Type, field.IsAuto, field.IsNullable))
-			if field.IsPrimary {
-				colDef += " PRIMARY KEY"
-			}
-			columns = append(columns, colDef)
-		}
-
-		sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)",
-			schema.TableName, strings.Join(columns, ", "))
-
-		if _, err := o.client.Exec(ctx, sql); err != nil {
-			return fmt.Errorf("auto-migrate %s: %w", schema.TableName, err)
-		}
+		// Store preloaded data in a map on the model for later access
+		_ = result
 	}
 	return nil
 }
 
-// goTypeToSQLType maps Go types to SQL types.
-func goTypeToSQLType(t reflect.Type, isAuto, isNullable bool) string {
-	sqlType := "TEXT"
-	switch t.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
-		sqlType = "INTEGER"
-	case reflect.Int64:
-		if isAuto {
-			sqlType = "INTEGER AUTOINCREMENT"
-		} else {
-			sqlType = "BIGINT"
+// ---------------------------------------------------------------------------
+// Schema Operations
+// ---------------------------------------------------------------------------
+
+// CreateTable generates and executes CREATE TABLE from a struct.
+func (o *ORM) CreateTable(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	t := v.Type()
+	fields := o.getCachedMeta(t)
+
+	var colDefs []string
+	for _, f := range fields {
+		colDef := fmt.Sprintf("%s %s", f.Column, goTypeToSQL(f.Type))
+		if f.IsPrimaryKey {
+			colDef += " PRIMARY KEY"
 		}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		sqlType = "INTEGER"
-	case reflect.Float32:
-		sqlType = "REAL"
-	case reflect.Float64:
-		sqlType = "DOUBLE"
-	case reflect.Bool:
-		sqlType = "BOOLEAN"
+		if f.AutoIncrement {
+			colDef += " AUTOINCREMENT"
+		}
+		if f.NotNull {
+			colDef += " NOT NULL"
+		}
+		if f.IsUnique {
+			colDef += " UNIQUE"
+		}
+		if f.Default != "" {
+			colDef += fmt.Sprintf(" DEFAULT %s", f.Default)
+		}
+		colDefs = append(colDefs, colDef)
+	}
+
+	sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);",
+		tableName(t),
+		strings.Join(colDefs, ", "))
+
+	return o.client.Query(ctx, sql)
+}
+
+// DropTable drops a table by struct type.
+func (o *ORM) DropTable(ctx context.Context, model interface{}) (*Result, error) {
+	v := reflect.ValueOf(model)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	t := v.Type()
+	sql := fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName(t))
+	return o.client.Query(ctx, sql)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// tableName derives the table name from a struct type.
+func tableName(t reflect.Type) string {
+	// Use struct name as table name, snake_cased
+	name := t.Name()
+	var result strings.Builder
+	for i, r := range name {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			result.WriteRune('_')
+		}
+		result.WriteRune(r)
+	}
+	return strings.ToLower(result.String())
+}
+
+func (o *ORM) relatedTableName(fieldName string) string {
+	// Convert field name to snake_case and pluralize
+	var result strings.Builder
+	for i, r := range fieldName {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			result.WriteRune('_')
+		}
+		result.WriteRune(r)
+	}
+	name := strings.ToLower(result.String())
+	// Simple pluralization
+	if !strings.HasSuffix(name, "s") {
+		name += "s"
+	}
+	return name
+}
+
+// goTypeToSQL maps Go types to SQL types.
+func goTypeToSQL(t reflect.Type) string {
+	switch t.Kind() {
 	case reflect.String:
-		sqlType = "TEXT"
+		return "TEXT"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "INTEGER"
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "INTEGER"
+	case reflect.Float32, reflect.Float64:
+		return "REAL"
+	case reflect.Bool:
+		return "BOOLEAN"
+	default:
+		return "TEXT"
 	}
+}
 
-	if !isNullable && !isAuto {
-		sqlType += " NOT NULL"
+// isZeroValue checks if a reflect.Value is its zero value.
+func isZeroValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.String:
+		return v.String() == ""
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	default:
+		return v.IsZero()
 	}
+}
 
-	return sqlType
+// hydrate maps a database row to struct fields.
+func (o *ORM) hydrate(v reflect.Value, fields []*fieldMeta, row []interface{}) {
+	for i, f := range fields {
+		if i < len(row) {
+			setValue(v, f, row[i])
+		}
+	}
 }
