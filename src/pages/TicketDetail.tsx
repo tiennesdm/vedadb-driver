@@ -1,7 +1,7 @@
 /**
  * Ticket Detail Page — Full ticket view with comments, activity log, sidebar, and reject functionality
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTicketDetail } from '@/hooks/useTickets';
 import useAppStore from '@/lib/vedadb-store';
@@ -9,6 +9,11 @@ import StatusBadge from '@/components/StatusBadge';
 import PriorityBadge from '@/components/PriorityBadge';
 import TicketFormModal from '@/components/tickets/TicketFormModal';
 import DeleteConfirmDialog from '@/components/tickets/DeleteConfirmDialog';
+import WatcherBadge from '@/components/advanced/WatcherBadge';
+import CustomFieldPanel from '@/components/advanced/CustomFieldPanel';
+import CollisionDetector from '@/components/advanced/CollisionDetector';
+import TicketMergeModal from '@/components/advanced/TicketMergeModal';
+import { vedaQuery, vedaExec, toObjects } from '@/lib/vedadb-api';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -35,6 +40,11 @@ import {
   Activity,
   Ban,
   AlertTriangle,
+  GitMerge,
+  Link2,
+  Eye,
+  Plus,
+  X,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -202,6 +212,23 @@ export default function TicketDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectLoading, setRejectLoading] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+
+  // Advanced: watchers
+  const [watchers, setWatchers] = useState<Array<{ id: number; name: string; email: string; avatar?: string; role?: string }>>([]);
+  const [allUsersList, setAllUsersList] = useState<Array<{ id: number; name: string; email: string; avatar?: string; role: string }>>([]);
+  const [showAddWatcher, setShowAddWatcher] = useState(false);
+  const [watcherSearch, setWatcherSearch] = useState('');
+  const [filteredWatcherUsers, setFilteredWatcherUsers] = useState<Array<{ id: number; name: string; email: string }>>([]);
+
+  // Advanced: linked tickets
+  const [linkedTickets, setLinkedTickets] = useState<Array<{ id: number; source_id: number; target_id: number; link_type: string; source_title?: string; target_title?: string }>>([]);
+
+  // Advanced: custom fields
+  const [customFields, setCustomFields] = useState<Array<{ id: string; name: string; label: string; field_type: 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'date'; options?: string[]; required?: boolean; value?: string | number | boolean; placeholder?: string }>>([]);
+
+  // Advanced: collision
+  const [activeViewers, setActiveViewers] = useState<Array<{ userId: number; name: string; avatar?: string; since: string }>>([]);
 
   const {
     ticket,
@@ -237,6 +264,156 @@ export default function TicketDetail() {
     };
     fetch();
   }, [query]);
+
+  // Fetch advanced data: watchers, links, custom fields
+  const fetchWatchers = useCallback(async () => {
+    if (!ticketId) return;
+    try {
+      const res = await vedaQuery(
+        `SELECT tw.id, tw.user_id, u.name, u.email, u.avatar, u.role FROM ticket_watchers tw LEFT JOIN users u ON u.id = tw.user_id WHERE tw.ticket_id = ${ticketId}`
+      );
+      const rows = toObjects(res);
+      setWatchers(rows.map((r: Record<string, unknown>) => ({
+        id: r.user_id as number,
+        name: (r.name as string) ?? 'Unknown',
+        email: (r.email as string) ?? '',
+        avatar: r.avatar as string | undefined,
+        role: r.role as string | undefined,
+      })));
+    } catch { setWatchers([]); }
+  }, [ticketId]);
+
+  const fetchLinkedTickets = useCallback(async () => {
+    if (!ticketId) return;
+    try {
+      const res = await vedaQuery(
+        `SELECT tl.*, s.title as source_title, t.title as target_title FROM ticket_links tl LEFT JOIN tickets s ON s.id = tl.source_id LEFT JOIN tickets t ON t.id = tl.target_id WHERE tl.source_id = ${ticketId} OR tl.target_id = ${ticketId} ORDER BY tl.created_at DESC`
+      );
+      setLinkedTickets(toObjects(res) as unknown as typeof linkedTickets);
+    } catch { setLinkedTickets([]); }
+  }, [ticketId]);
+
+  const fetchCustomFields = useCallback(async () => {
+    if (!ticketId) return;
+    try {
+      // Check if ticket has a template with custom fields
+      const res = await vedaQuery(
+        `SELECT custom_fields_json FROM tickets WHERE id = ${ticketId}`
+      );
+      if (res.rows.length > 0 && res.rows[0][0]) {
+        const parsed = JSON.parse(res.rows[0][0] as string);
+        if (Array.isArray(parsed)) {
+          setCustomFields(parsed.map((f: Record<string, unknown>, idx: number) => ({
+            id: (f.id as string) ?? `cf_${idx}`,
+            name: (f.name as string) ?? '',
+            label: (f.label as string) ?? f.name ?? '',
+            field_type: (f.field_type as 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'date') ?? 'text',
+            options: f.options as string[] | undefined,
+            required: f.required as boolean | undefined,
+            value: f.value as string | number | boolean | undefined,
+            placeholder: f.placeholder as string | undefined,
+          })));
+          return;
+        }
+      }
+      setCustomFields([]);
+    } catch { setCustomFields([]); }
+  }, [ticketId]);
+
+  const fetchActiveViewers = useCallback(async () => {
+    if (!ticketId) return;
+    try {
+      const res = await vedaQuery(
+        `SELECT user_id, MAX(created_at) as since FROM activities WHERE ticket_id = ${ticketId} AND created_at > datetime('now', '-5 minutes') GROUP BY user_id`
+      );
+      const rows = toObjects(res);
+      // Resolve names
+      const userIds = rows.map((r: Record<string, unknown>) => r.user_id).filter(Boolean);
+      if (userIds.length > 0) {
+        const uRes = await vedaQuery(`SELECT id, name, avatar FROM users WHERE id IN (${userIds.join(',')})`);
+        const uMap = new Map(toObjects(uRes).map((u: Record<string, unknown>) => [u.id, u]));
+        setActiveViewers(rows.map((r: Record<string, unknown>) => ({
+          userId: r.user_id as number,
+          name: (uMap.get(r.user_id as number)?.name as string) ?? `User ${r.user_id}`,
+          avatar: uMap.get(r.user_id as number)?.avatar as string | undefined,
+          since: (r.since as string) ?? new Date().toISOString(),
+        })));
+      } else {
+        setActiveViewers([]);
+      }
+    } catch { setActiveViewers([]); }
+  }, [ticketId]);
+
+  const fetchAllUsers = useCallback(async () => {
+    try {
+      const res = await vedaQuery(`SELECT id, name, email, avatar, role FROM users WHERE is_active = 1 ORDER BY name`);
+      setAllUsersList(toObjects(res) as unknown as typeof allUsersList);
+    } catch { setAllUsersList([]); }
+  }, []);
+
+  useEffect(() => {
+    if (ticketId) {
+      fetchWatchers();
+      fetchLinkedTickets();
+      fetchCustomFields();
+      fetchActiveViewers();
+      fetchAllUsers();
+    }
+  }, [ticketId, fetchWatchers, fetchLinkedTickets, fetchCustomFields, fetchActiveViewers, fetchAllUsers]);
+
+  const handleAddWatcher = async (userId: number) => {
+    if (!ticketId) return;
+    try {
+      await vedaExec(`INSERT INTO ticket_watchers (ticket_id, user_id, notify_on_update, created_at) VALUES (${ticketId}, ${userId}, 1, datetime('now'))`);
+      fetchWatchers();
+      setShowAddWatcher(false);
+      setWatcherSearch('');
+      setFilteredWatcherUsers([]);
+    } catch { /* ignore */ }
+  };
+
+  const handleRemoveWatcher = async (watcherUserId: number) => {
+    if (!ticketId) return;
+    try {
+      await vedaExec(`DELETE FROM ticket_watchers WHERE ticket_id = ${ticketId} AND user_id = ${watcherUserId}`);
+      fetchWatchers();
+    } catch { /* ignore */ }
+  };
+
+  const handleSearchWatcher = (term: string) => {
+    setWatcherSearch(term);
+    if (!term.trim()) { setFilteredWatcherUsers([]); return; }
+    const idNum = parseInt(term, 10);
+    const filtered = allUsersList.filter(
+      (u) =>
+        !watchers.some((w) => w.id === u.id) &&
+        (u.name.toLowerCase().includes(term.toLowerCase()) ||
+         u.email.toLowerCase().includes(term.toLowerCase()) ||
+         (!isNaN(idNum) && u.id === idNum))
+    );
+    setFilteredWatcherUsers(filtered.slice(0, 6));
+  };
+
+  const handleUnlinkTicket = async (linkId: number) => {
+    try {
+      await vedaExec(`DELETE FROM ticket_links WHERE id = ${linkId}`);
+      fetchLinkedTickets();
+    } catch { /* ignore */ }
+  };
+
+  const handleMerge = async (targetId: number, _strategy: string) => {
+    if (!ticketId) return;
+    try {
+      // Create a comment on the target referencing this ticket
+      await vedaExec(`INSERT INTO comments (ticket_id, user_id, content, created_at) VALUES (${targetId}, ${currentUser?.id ?? 'NULL'}, 'Merged from ticket #${ticketId}: ${ticket?.title ?? ''}', datetime('now'))`);
+      // Close the source ticket
+      await vedaExec(`UPDATE tickets SET status = 'closed', updated_at = datetime('now') WHERE id = ${ticketId}`);
+      // Create activity
+      await vedaExec(`INSERT INTO activities (ticket_id, user_id, action, created_at) VALUES (${targetId}, ${currentUser?.id ?? 'NULL'}, 'Merged ticket #${ticketId}', datetime('now'))`);
+      refresh();
+      setMergeOpen(false);
+    } catch { /* ignore */ }
+  };
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(`TK-${ticketId}`);
@@ -372,6 +549,16 @@ export default function TicketDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Merge Ticket Button */}
+            {(isAdmin || isManager) && !isRejected && (
+              <button
+                onClick={() => setMergeOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#e5e0d5] bg-[#f5f0e8] px-3 py-2 text-sm text-[#1f1f1f] transition-colors hover:bg-[#ede7db]"
+              >
+                <GitMerge size={14} />
+                <span className="hidden sm:inline">Merge</span>
+              </button>
+            )}
             {/* Reject Ticket Button */}
             {canReject && !isRejected && (
               <button
@@ -436,6 +623,15 @@ export default function TicketDetail() {
           {statusNotification}
         </div>
       )}
+
+      {/* Collision Detection Banner */}
+      <CollisionDetector
+        ticketId={ticketId}
+        currentUserId={currentUser?.id ?? 0}
+        viewers={activeViewers}
+        onRefreshViewers={fetchActiveViewers}
+        className="mb-4"
+      />
 
       {/* Rejection Banner */}
       {isRejected && (ticket as unknown as Record<string, string>).rejection_reason && (
@@ -772,10 +968,120 @@ export default function TicketDetail() {
                   </button>
                 </div>
               )}
+
+              {/* Watchers Section */}
+              <div className="mt-4 pt-4 border-t border-[#e5e0d5]">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="flex items-center gap-1 text-[10px] uppercase tracking-[0.1em] text-[#595959]">
+                    <Eye size={12} /> Watchers ({watchers.length})
+                  </label>
+                  {(canEdit || isAdmin) && (
+                    <button
+                      onClick={() => setShowAddWatcher((p) => !p)}
+                      className="text-[#c9a87c] hover:text-[#b8996a] transition-colors"
+                    >
+                      {showAddWatcher ? <X size={12} /> : <Plus size={12} />}
+                    </button>
+                  )}
+                </div>
+                {showAddWatcher && (
+                  <div className="mb-2 relative">
+                    <input
+                      type="text"
+                      value={watcherSearch}
+                      onChange={(e) => handleSearchWatcher(e.target.value)}
+                      placeholder="Search user to add..."
+                      className="w-full h-8 px-2 text-xs border border-[#e5e0d5] rounded-md bg-[#fbf9f4] focus:border-[#c9a87c] outline-none"
+                    />
+                    {filteredWatcherUsers.length > 0 && (
+                      <div className="absolute z-10 mt-1 w-full rounded-md border border-[#e5e0d5] bg-white shadow-lg max-h-32 overflow-y-auto">
+                        {filteredWatcherUsers.map((u) => (
+                          <button
+                            key={u.id}
+                            className="w-full px-2 py-1.5 text-left text-xs hover:bg-[#f5f3ef] flex items-center gap-2"
+                            onClick={() => handleAddWatcher(u.id)}
+                          >
+                            <div className="h-4 w-4 rounded-full bg-[#c9a87c] flex items-center justify-center text-white text-[7px] font-medium">
+                              {u.name?.[0]?.toUpperCase()}
+                            </div>
+                            <span className="text-[#262626]">{u.name}</span>
+                            <span className="text-[#8a8a8a]">{u.email}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <WatcherBadge
+                  watchers={watchers}
+                  maxDisplay={5}
+                  editable={canEdit || isAdmin}
+                  onRemove={handleRemoveWatcher}
+                />
+              </div>
+
+              {/* Linked Tickets Section */}
+              {linkedTickets.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-[#e5e0d5]">
+                  <label className="flex items-center gap-1 text-[10px] uppercase tracking-[0.1em] text-[#595959] mb-2">
+                    <Link2 size={12} /> Linked Tickets ({linkedTickets.length})
+                  </label>
+                  <div className="space-y-1.5">
+                    {linkedTickets.map((link) => {
+                      const isSource = link.source_id === ticketId;
+                      const otherId = isSource ? link.target_id : link.source_id;
+                      const otherTitle = isSource ? link.target_title : link.source_title;
+                      return (
+                        <div
+                          key={link.id}
+                          className="flex items-center justify-between p-1.5 rounded-md bg-[#fbf9f4] text-xs group"
+                        >
+                          <button
+                            onClick={() => navigate(`/tickets/${otherId}`)}
+                            className="flex items-center gap-1.5 flex-1 text-left hover:underline"
+                          >
+                            <span className="text-[10px] font-mono text-[#c9a87c]">#{otherId}</span>
+                            <span className="text-[#262626] truncate">{otherTitle}</span>
+                            <span className="text-[9px] px-1 py-0.5 rounded-full bg-white text-[#8a8a8a] capitalize">
+                              {link.link_type.replace('_', ' ')}
+                            </span>
+                          </button>
+                          {(canEdit || isAdmin) && (
+                            <button
+                              onClick={() => handleUnlinkTicket(link.id)}
+                              className="opacity-0 group-hover:opacity-100 text-[#8a8a8a] hover:text-red-500 transition-all"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Fields Panel */}
+              <CustomFieldPanel
+                fields={customFields}
+                onChange={(fields) => setCustomFields(fields)}
+                editable={canEdit}
+                className="mt-4"
+              />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Merge Modal */}
+      {ticket && (
+        <TicketMergeModal
+          open={mergeOpen}
+          onClose={() => setMergeOpen(false)}
+          sourceTicket={ticket}
+          onMerge={handleMerge}
+        />
+      )}
 
       {/* Edit Modal */}
       <TicketFormModal

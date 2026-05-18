@@ -25,6 +25,13 @@ import ServiceCatalog from '@/pages/rbac/ServiceCatalog';
 import CSATDashboard from '@/pages/rbac/CSATDashboard';
 import TimeTracking from '@/pages/rbac/TimeTracking';
 
+/* Advanced ticket management pages */
+import TicketTemplates from '@/pages/advanced/TicketTemplates';
+import TicketLinks from '@/pages/advanced/TicketLinks';
+import TicketWatchers from '@/pages/advanced/TicketWatchers';
+import EscalationPaths from '@/pages/advanced/EscalationPaths';
+import RecurringTickets from '@/pages/advanced/RecurringTickets';
+
 /* ------------------------------------------------------------------ */
 /*  Route-level RBAC protection                                       */
 /* ------------------------------------------------------------------ */
@@ -45,6 +52,11 @@ const ROUTE_ACCESS: Record<string, { minRole?: Role; anyPerm?: Permission[] }> =
   '/catalog':       {},
   '/csat':          { anyPerm: [Permission.CSAT_VIEW] },
   '/time-entries':  { anyPerm: [Permission.REPORT_VIEW_OWN, Permission.REPORT_VIEW_ALL] },
+  '/templates':     { minRole: Role.AGENT },
+  '/links':         { minRole: Role.AGENT },
+  '/watchers':      { minRole: Role.AGENT },
+  '/escalation':    { anyPerm: [Permission.AUTOMATION_MANAGE, Permission.SLA_MANAGE] },
+  '/recurring':     { anyPerm: [Permission.AUTOMATION_MANAGE, Permission.TICKET_CREATE] },
 };
 
 function canAccessRoute(path: string, role: string | undefined): boolean {
@@ -124,6 +136,11 @@ function AppRoutes() {
       <Route path="/catalog"       element={<ProtectedRoute routePath="/catalog"><ServiceCatalog /></ProtectedRoute>} />
       <Route path="/csat"          element={<ProtectedRoute routePath="/csat"><CSATDashboard /></ProtectedRoute>} />
       <Route path="/time-entries"  element={<ProtectedRoute routePath="/time-entries"><TimeTracking /></ProtectedRoute>} />
+      <Route path="/templates"     element={<ProtectedRoute routePath="/templates"><TicketTemplates /></ProtectedRoute>} />
+      <Route path="/links"         element={<ProtectedRoute routePath="/links"><TicketLinks /></ProtectedRoute>} />
+      <Route path="/watchers"      element={<ProtectedRoute routePath="/watchers"><TicketWatchers /></ProtectedRoute>} />
+      <Route path="/escalation"    element={<ProtectedRoute routePath="/escalation"><EscalationPaths /></ProtectedRoute>} />
+      <Route path="/recurring"     element={<ProtectedRoute routePath="/recurring"><RecurringTickets /></ProtectedRoute>} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
