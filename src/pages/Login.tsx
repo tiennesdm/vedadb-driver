@@ -1,21 +1,16 @@
-/**
- * VedaDesk Login + VedaDB Connection Setup
- * First-time setup flow: Connect to VedaDB → Login
- */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Database, Globe, KeyRound, CheckCircle2, XCircle, ArrowRight,
-  Server, Loader2, CircleDot,
-  AlertTriangle, ChevronRight, Lock, Plug
+  Loader2, CircleDot, AlertTriangle, ChevronRight, Lock, Plug,
+  Terminal, Copy, Check
 } from 'lucide-react';
 import useAppStore from '@/lib/vedadb-store';
 import {
   vedaTestConnection,
   setApiBase,
   getApiBase,
-  getApiKey,
   getConnectionStatus,
 } from '@/lib/vedadb-api';
 import RoleBadge from '@/components/RoleBadge';
@@ -29,7 +24,22 @@ const SEEDED_USERS = [
   { email: 'emily.r@company.com', role: Role.CUSTOMER, label: 'Emily Rodriguez', dept: 'Sales' },
 ];
 
-type Step = 'connect' | 'login' | 'setup-db';
+const START_COMMANDS = [
+  '# 1. Clone VedaDB server repository',
+  'git clone https://github.com/tiennesdm/vedadb-server.git',
+  'cd vedadb-server',
+  '',
+  '# 2. Install Go dependencies',
+  'go mod tidy',
+  '',
+  '# 3. Start the Workbench server',
+  'go run ./cmd/vedadb-workbench/main.go',
+  '',
+  '# Server will start on port 9090',
+  '# API available at: http://localhost:9090',
+];
+
+type Step = 'connect' | 'login';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -39,14 +49,14 @@ export default function Login() {
 
   const [step, setStep] = useState<Step>('connect');
   const [apiUrl, setApiUrl] = useState(getApiBase());
-  const [apiKey, setApiKey] = useState(getApiKey());
+  const [apiKey, setApiKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [selectedEmail, setSelectedEmail] = useState(SEEDED_USERS[0].email);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
 
-  // Check if already connected
   useEffect(() => {
     const status = getConnectionStatus();
     if (status.connected) {
@@ -55,11 +65,8 @@ export default function Login() {
     }
   }, []);
 
-  // Redirect if authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/dashboard');
-    }
+    if (isAuthenticated) navigate('/dashboard');
   }, [isAuthenticated, navigate]);
 
   const handleTestConnection = async () => {
@@ -75,7 +82,7 @@ export default function Login() {
         setStep('login');
         await initDB();
       } else {
-        setError('Could not connect to VedaDB. Please check the server URL and make sure the server is running.');
+        setError('Cannot connect to VedaDB. Make sure the server is running at the URL above.');
       }
     } catch (err: any) {
       setError(err.message || 'Connection failed. Is the VedaDB server running?');
@@ -87,287 +94,217 @@ export default function Login() {
     setLoggingIn(true);
     try {
       const ok = await storeLogin(selectedEmail, '');
-      if (ok) {
-        navigate('/dashboard');
-      } else {
-        setError('Login failed. User not found in database. You may need to set up the database first.');
-      }
+      if (ok) navigate('/dashboard');
+      else setError('Login failed. User not found — initialize the database first in Settings → DB Setup.');
     } catch (err: any) {
       setError(err.message || 'Login failed');
     }
     setLoggingIn(false);
   };
 
+  const copyCommands = () => {
+    navigator.clipboard.writeText(START_COMMANDS.join('\n'));
+    setCopiedCmd(true);
+    setTimeout(() => setCopiedCmd(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-[#fbf9f4] flex">
-      {/* Left Panel — Connection Info */}
-      <div className="hidden lg:flex lg:w-[45%] bg-[#1f1f1f] flex-col justify-center px-12 relative overflow-hidden">
-        {/* Animated gradient orbs */}
-        <div className="absolute top-[-20%] left-[-20%] w-[500px] h-[500px] rounded-full bg-[#c9a87c]/10 blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[-20%] right-[-20%] w-[400px] h-[400px] rounded-full bg-[#c9a87c]/5 blur-[100px] animate-pulse" />
+      {/* Left Panel — How to Start VedaDB */}
+      <div className="hidden lg:flex lg:w-[48%] bg-[#1f1f1f] flex-col px-10 py-8 relative overflow-hidden">
+        <div className="absolute top-[-15%] left-[-15%] w-[500px] h-[500px] rounded-full bg-[#c9a87c]/10 blur-[120px]" />
+        <div className="absolute bottom-[-15%] right-[-15%] w-[400px] h-[400px] rounded-full bg-[#c9a87c]/5 blur-[100px]" />
 
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="relative z-10"
-        >
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-xl bg-[#c9a87c]/20 flex items-center justify-center">
-              <Database size={28} className="text-[#c9a87c]" />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="relative z-10">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-[#c9a87c]/20 flex items-center justify-center">
+              <Database size={24} className="text-[#c9a87c]" />
             </div>
-            <h1 className="text-3xl font-bold text-white tracking-tight">VedaDesk</h1>
+            <h1 className="text-2xl font-bold text-white tracking-tight">VedaDesk</h1>
           </div>
 
-          <h2 className="text-2xl font-semibold text-white/90 mb-4">
-            Connect to Your VedaDB Server
-          </h2>
-          <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-md">
-            VedaDesk is a Service Desk Portal powered by VedaDB. Before you can use the portal, you need to connect to your VedaDB database server. The server runs locally or on your infrastructure.
-          </p>
-
-          {/* How It Works */}
-          <div className="space-y-4 max-w-md">
-            <InfoCard
-              icon={<Server size={18} />}
-              title="1. VedaDB Server Runs Locally"
-              desc="Your database server runs on localhost:9090 by default. Make sure it's started."
-            />
-            <InfoCard
-              icon={<Plug size={18} />}
-              title="2. Connect This Portal"
-              desc="Enter your VedaDB server URL and API key to establish connection."
-            />
-            <InfoCard
-              icon={<Database size={18} />}
-              title="3. Initialize Database"
-              desc="Create tables and seed initial data on first connection."
-            />
-            <InfoCard
-              icon={<Lock size={18} />}
-              title="4. Login & Start Working"
-              desc="Choose a user role and start managing tickets."
-            />
-          </div>
-
-          {/* Server start instructions */}
-          <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/10 max-w-md">
+          {/* What is this */}
+          <div className="mb-6 p-4 bg-white/5 rounded-xl border border-white/10">
             <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle size={14} className="text-[#faad14]" />
-              <span className="text-sm font-medium text-[#faad14]">Haven't started VedaDB yet?</span>
+              <InfoIcon />
+              <span className="text-sm font-medium text-[#faad14]">Why do I need to start a server?</span>
             </div>
-            <code className="block text-xs font-mono text-white/70 bg-black/30 rounded-lg p-3 mt-2">
-              # Start VedaDB Server<br />
-              cd vedadb-server<br />
-              go run ./cmd/vedadb-workbench/main.go<br />
-              <br />
-              # Server will start on port 9090<br />
-              # Workbench URL: http://localhost:9090
-            </code>
+            <p className="text-xs text-white/50 leading-relaxed">
+              VedaDesk is a frontend portal. Your data lives in the <strong className="text-white/70">VedaDB database server</strong> which runs separately on your machine (or server). This portal connects to it via HTTP API.
+            </p>
+          </div>
+
+          {/* Step 1: Start Server */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 rounded-full bg-[#c9a87c] text-[#1f1f1f] flex items-center justify-center text-xs font-bold">1</div>
+              <span className="text-sm font-semibold text-white/90">Start VedaDB Server on Your Machine</span>
+            </div>
+            <div className="ml-8 relative">
+              <div className="bg-black/40 rounded-xl border border-white/10 p-3 font-mono text-[11px] text-white/60 leading-relaxed overflow-x-auto">
+                <div className="flex justify-between items-center mb-2 pb-2 border-b border-white/10">
+                  <span className="text-[10px] text-white/40">Terminal</span>
+                  <button onClick={copyCommands} className="text-[10px] text-[#c9a87c] hover:text-[#b8976b] flex items-center gap-1">
+                    {copiedCmd ? <Check size={10} /> : <Copy size={10} />}
+                    {copiedCmd ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                {START_COMMANDS.map((line, i) => (
+                  <div key={i} className={line.startsWith('#') ? 'text-[#8a8a8a] italic mt-1' : line === '' ? 'h-2' : 'text-green-400/80'}>
+                    {line || ' '}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Step 2: Connect */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-6 h-6 rounded-full bg-[#c9a87c] text-[#1f1f1f] flex items-center justify-center text-xs font-bold">2</div>
+              <span className="text-sm font-semibold text-white/90">This Portal Connects to It</span>
+            </div>
+            <p className="ml-8 text-xs text-white/50">
+              Once the server is running at <code className="text-[#c9a87c]">http://localhost:9090</code>, enter that URL on the right panel and click "Connect".
+            </p>
+          </div>
+
+          {/* Step 3: Login */}
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-6 h-6 rounded-full bg-[#c9a87c] text-[#1f1f1f] flex items-center justify-center text-xs font-bold">3</div>
+              <span className="text-sm font-semibold text-white/90">Login & Start Using</span>
+            </div>
+            <p className="ml-8 text-xs text-white/50">
+              Select a demo user and login. First time? Go to <strong className="text-white/70">Settings → DB Setup</strong> to create tables and seed data.
+            </p>
+          </div>
+
+          {/* Requirements */}
+          <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+            <div className="flex items-center gap-2 mb-1">
+              <Terminal size={12} className="text-[#8a8a8a]" />
+              <span className="text-xs font-medium text-white/60">Prerequisites</span>
+            </div>
+            <ul className="text-[11px] text-white/40 space-y-0.5 ml-5 list-disc">
+              <li>Go 1.22+ installed (<a href="https://go.dev/dl" target="_blank" rel="noreferrer" className="text-[#c9a87c] hover:underline">download</a>)</li>
+              <li>VedaDB server repository cloned</li>
+              <li>Port 9090 available on your machine</li>
+            </ul>
           </div>
         </motion.div>
       </div>
 
-      {/* Right Panel — Connection Form */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="w-full max-w-md"
-        >
+      {/* Right Panel */}
+      <div className="flex-1 flex items-center justify-center px-6 py-10 overflow-y-auto">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }} className="w-full max-w-md">
           {/* Mobile header */}
-          <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <Database size={28} className="text-[#c9a87c]" />
-            <h1 className="text-2xl font-bold text-[#1f1f1f]">VedaDesk</h1>
+          <div className="lg:hidden flex items-center gap-3 mb-6 justify-center">
+            <Database size={24} className="text-[#c9a87c]" />
+            <h1 className="text-xl font-bold text-[#1f1f1f]">VedaDesk</h1>
           </div>
 
-          {/* Connection Status Banner */}
           {connected && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="mb-6 p-4 bg-[#f6ffed] border border-[#b7eb8f] rounded-xl flex items-center gap-3"
-            >
-              <CheckCircle2 size={20} className="text-[#52c41a] shrink-0" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mb-5 p-3 bg-[#f6ffed] border border-[#b7eb8f] rounded-xl flex items-center gap-3">
+              <CheckCircle2 size={18} className="text-[#52c41a] shrink-0" />
               <div>
                 <p className="text-sm font-medium text-[#389e0d]">Connected to VedaDB</p>
-                <p className="text-xs text-[#389e0d]/70">{getApiBase()}</p>
+                <p className="text-[11px] text-[#389e0d]/70 font-mono">{getApiBase()}</p>
               </div>
             </motion.div>
           )}
 
-          {/* Error Banner */}
           {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 bg-[#fff1f0] border border-[#ffa39e] rounded-xl flex items-start gap-3"
-            >
-              <XCircle size={18} className="text-[#f5222d] shrink-0 mt-0.5" />
-              <p className="text-sm text-[#cf1322]">{error}</p>
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-5 p-3 bg-[#fff1f0] border border-[#ffa39e] rounded-xl flex items-start gap-3">
+              <XCircle size={16} className="text-[#f5222d] shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-[#cf1322]">{error}</p>
+                <p className="text-[11px] text-[#cf1322]/70 mt-1">
+                  Make sure VedaDB server is running. Check the instructions on the left panel.
+                </p>
+              </div>
             </motion.div>
           )}
 
           {step === 'connect' ? (
-            /* Step 1: Connect to VedaDB */
             <>
-              <div className="mb-6">
+              <div className="mb-5">
                 <h2 className="text-xl font-semibold text-[#1f1f1f]">Connect to VedaDB</h2>
-                <p className="text-sm text-[#595959] mt-1">
-                  Enter your VedaDB server details to get started
-                </p>
+                <p className="text-sm text-[#595959] mt-1">Enter your VedaDB server endpoint below</p>
               </div>
 
               <div className="space-y-4">
-                {/* API URL */}
                 <div>
-                  <label className="block text-xs font-medium text-[#595959] uppercase tracking-wider mb-1.5">
-                    Server URL
-                  </label>
+                  <label className="block text-xs font-medium text-[#595959] uppercase tracking-wider mb-1.5">Server URL</label>
                   <div className="relative">
                     <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
-                    <input
-                      type="text"
-                      value={apiUrl}
-                      onChange={(e) => { setApiUrl(e.target.value); setError(''); }}
+                    <input type="text" value={apiUrl} onChange={(e) => { setApiUrl(e.target.value); setError(''); }}
                       placeholder="http://localhost:9090"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#e5e0d5] bg-white text-sm text-[#1f1f1f] outline-none focus:border-[#c9a87c] focus:ring-2 focus:ring-[#c9a87c]/20 transition-all font-mono"
-                    />
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#e5e0d5] bg-white text-sm text-[#1f1f1f] outline-none focus:border-[#c9a87c] focus:ring-2 focus:ring-[#c9a87c]/20 transition-all font-mono" />
                   </div>
-                  <p className="text-[11px] text-[#8a8a8a] mt-1">
-                    Default: http://localhost:9090 (VedaDB Workbench)
-                  </p>
+                  <p className="text-[11px] text-[#8a8a8a] mt-1">Default: http://localhost:9090 (VedaDB Workbench)</p>
                 </div>
 
-                {/* API Key */}
                 <div>
                   <label className="block text-xs font-medium text-[#595959] uppercase tracking-wider mb-1.5">
                     API Key <span className="normal-case text-[#8a8a8a] font-normal">(optional)</span>
                   </label>
                   <div className="relative">
                     <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
-                    <input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
+                    <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
                       placeholder="Enter API key if required"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#e5e0d5] bg-white text-sm text-[#1f1f1f] outline-none focus:border-[#c9a87c] focus:ring-2 focus:ring-[#c9a87c]/20 transition-all font-mono"
-                    />
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-[#e5e0d5] bg-white text-sm text-[#1f1f1f] outline-none focus:border-[#c9a87c] focus:ring-2 focus:ring-[#c9a87c]/20 transition-all font-mono" />
                   </div>
                 </div>
 
-                {/* Quick URLs */}
                 <div className="flex flex-wrap gap-2">
                   {['http://localhost:9090', 'http://127.0.0.1:9090', 'http://localhost:8080'].map((url) => (
-                    <button
-                      key={url}
-                      onClick={() => setApiUrl(url)}
-                      className="text-[11px] px-2.5 py-1 rounded-lg bg-[#f5f0e8] text-[#595959] hover:bg-[#ede7db] hover:text-[#1f1f1f] transition-colors"
-                    >
-                      {url}
-                    </button>
+                    <button key={url} onClick={() => setApiUrl(url)}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-[#f5f0e8] text-[#595959] hover:bg-[#ede7db] transition-colors">{url}</button>
                   ))}
                 </div>
 
-                {/* Test Connection Button */}
-                <button
-                  onClick={handleTestConnection}
-                  disabled={testing || !apiUrl.trim()}
-                  className="w-full h-12 rounded-xl bg-[#c9a87c] hover:bg-[#b8976b] disabled:bg-[#e5e0d5] disabled:cursor-not-allowed text-white font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-2"
-                >
-                  {testing ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      <Plug size={18} />
-                      Connect to VedaDB
-                      <ArrowRight size={16} />
-                    </>
-                  )}
+                <button onClick={handleTestConnection} disabled={testing || !apiUrl.trim()}
+                  className={`w-full h-12 rounded-xl text-white font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-2 ${testing || !apiUrl.trim() ? 'bg-[#e5e0d5] cursor-not-allowed' : 'bg-[#c9a87c] hover:bg-[#b8976b]'}`}>
+                  {testing ? <><Loader2 size={18} className="animate-spin" /> Connecting...</> : <><Plug size={18} /> Connect to VedaDB <ArrowRight size={16} /></>}
                 </button>
 
-                {/* DB Setup Link */}
                 <div className="text-center">
-                  <button
-                    onClick={() => navigate('/db-setup')}
-                    className="text-xs text-[#c9a87c] hover:text-[#b8976b] hover:underline"
-                  >
-                    First time? Set up database →
-                  </button>
+                  <button onClick={() => navigate('/db-setup')} className="text-xs text-[#c9a87c] hover:text-[#b8976b] hover:underline">First time? Set up database tables →</button>
                 </div>
               </div>
             </>
           ) : (
-            /* Step 2: Login */
             <>
-              <div className="mb-6">
+              <div className="mb-5">
                 <h2 className="text-xl font-semibold text-[#1f1f1f]">Select User</h2>
-                <p className="text-sm text-[#595959] mt-1">
-                  Choose a pre-configured user to login as
-                </p>
+                <p className="text-sm text-[#595959] mt-1">Choose a demo user to login as</p>
               </div>
 
-              {/* User List */}
-              <div className="space-y-2 mb-6">
+              <div className="space-y-2 mb-5">
                 {SEEDED_USERS.map((user) => (
-                  <button
-                    key={user.email}
-                    onClick={() => setSelectedEmail(user.email)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
-                      selectedEmail === user.email
-                        ? 'border-[#c9a87c] bg-[#faf5ed] ring-1 ring-[#c9a87c]/30'
-                        : 'border-[#e5e0d5] bg-white hover:border-[#c9a87c]/50 hover:bg-[#faf8f4]'
-                    }`}
-                  >
+                  <button key={user.email} onClick={() => setSelectedEmail(user.email)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${selectedEmail === user.email ? 'border-[#c9a87c] bg-[#faf5ed] ring-1 ring-[#c9a87c]/30' : 'border-[#e5e0d5] bg-white hover:border-[#c9a87c]/50'}`}>
                     <div className="w-10 h-10 rounded-full bg-[#f5f0e8] flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-semibold text-[#c9a87c]">
-                        {user.label.split(' ').map(n => n[0]).join('')}
-                      </span>
+                      <span className="text-sm font-semibold text-[#c9a87c]">{user.label.split(' ').map(n => n[0]).join('')}</span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-[#1f1f1f] truncate">{user.label}</p>
                       <p className="text-xs text-[#8a8a8a] truncate">{user.email}</p>
                     </div>
                     <RoleBadge role={user.role} />
-                    {selectedEmail === user.email && (
-                      <CircleDot size={18} className="text-[#c9a87c] shrink-0" />
-                    )}
+                    {selectedEmail === user.email && <CircleDot size={18} className="text-[#c9a87c] shrink-0" />}
                   </button>
                 ))}
               </div>
 
-              {/* Login Button */}
-              <button
-                onClick={handleLogin}
-                disabled={loggingIn}
-                className="w-full h-12 rounded-xl bg-[#c9a87c] hover:bg-[#b8976b] disabled:bg-[#e5e0d5] disabled:cursor-not-allowed text-white font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-              >
-                {loggingIn ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Logging in...
-                  </>
-                ) : (
-                  <>
-                    <Lock size={18} />
-                    Login as {SEEDED_USERS.find(u => u.email === selectedEmail)?.label}
-                    <ChevronRight size={16} />
-                  </>
-                )}
+              <button onClick={handleLogin} disabled={loggingIn}
+                className={`w-full h-12 rounded-xl text-white font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${loggingIn ? 'bg-[#e5e0d5] cursor-wait' : 'bg-[#c9a87c] hover:bg-[#b8976b]'}`}>
+                {loggingIn ? <><Loader2 size={18} className="animate-spin" /> Logging in...</> : <><Lock size={18} /> Login <ChevronRight size={16} /></>}
               </button>
 
-              {/* Back to Connection */}
               <div className="text-center mt-4">
-                <button
-                  onClick={() => { setStep('connect'); setConnected(false); setError(''); }}
-                  className="text-xs text-[#8a8a8a] hover:text-[#595959] transition-colors"
-                >
-                  ← Change connection
-                </button>
+                <button onClick={() => { setStep('connect'); setConnected(false); setError(''); }} className="text-xs text-[#8a8a8a] hover:text-[#595959]">← Change connection</button>
               </div>
             </>
           )}
@@ -377,22 +314,6 @@ export default function Login() {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helper Components                                                  */
-/* ------------------------------------------------------------------ */
-
-function InfoCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0 mt-0.5 text-[#c9a87c]">
-        {icon}
-      </div>
-      <div>
-        <p className="text-sm font-medium text-white/80">{title}</p>
-        <p className="text-xs text-white/50 mt-0.5 leading-relaxed">{desc}</p>
-      </div>
-    </div>
-  );
+function InfoIcon() {
+  return <AlertTriangle size={14} className="text-[#faad14] shrink-0" />;
 }
-
-// End of file
