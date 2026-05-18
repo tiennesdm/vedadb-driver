@@ -48,6 +48,32 @@ module.exports = {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // VedaDesk custom colors
+        vedadesk: {
+          primary: '#c9a87c',
+          'primary-dark': '#1a1a1a',
+          'primary-light': '#f5f0e8',
+          'text-primary': '#1f1f1f',
+          'text-secondary': '#595959',
+          'text-light': '#f5f5f5',
+          success: '#52c41a',
+          warning: '#faad14',
+          error: '#f5222d',
+          info: '#1890ff',
+          purple: '#722ed1',
+          'bg-dark': '#0f0f0f',
+          'bg-darker': '#1f1f1f',
+          'bg-light': '#fbf9f4',
+          'bg-white': '#ffffff',
+          'bg-warm': '#f5f0e8',
+          'border-light': '#e5e0d5',
+          'border-dark': '#2a2a2a',
+        },
+      },
+      fontFamily: {
+        outfit: ['Outfit', 'sans-serif'],
+        playfair: ['"Playfair Display"', 'serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
       },
       borderRadius: {
         xl: "calc(var(--radius) + 4px)",
@@ -58,6 +84,9 @@ module.exports = {
       },
       boxShadow: {
         xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        card: "0 4px 12px rgba(0,0,0,0.08)",
+        'card-hover': "0 4px 16px rgba(0,0,0,0.08)",
+        dropdown: "0 4px 16px rgba(0,0,0,0.1)",
       },
       keyframes: {
         "accordion-down": {
@@ -72,11 +101,28 @@ module.exports = {
           "0%,70%,100%": { opacity: "1" },
           "20%,50%": { opacity: "0" },
         },
+        "pulse-dot": {
+          "0%, 100%": { transform: "scale(1)", opacity: "1" },
+          "50%": { transform: "scale(1.3)", opacity: "0.5" },
+        },
+        shake: {
+          "0%, 100%": { transform: "translateX(0)" },
+          "10%, 50%, 90%": { transform: "translateX(-10px)" },
+          "30%, 70%": { transform: "translateX(10px)" },
+        },
+        spin: {
+          from: { transform: "rotate(0deg)" },
+          to: { transform: "rotate(360deg)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "caret-blink": "caret-blink 1.25s ease-out infinite",
+        "pulse-dot": "pulse-dot 2s ease-in-out infinite",
+        "pulse-dot-fast": "pulse-dot 1s ease-in-out infinite",
+        shake: "shake 0.5s ease-in-out",
+        spin: "spin 1s linear infinite",
       },
     },
   },
