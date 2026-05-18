@@ -4,6 +4,8 @@
  * Seeds realistic mock data on first load.
  */
 
+export { Role, TicketType, Permission } from './rbac';
+
 // --- Types ---
 
 interface Result<T = Record<string, unknown>> {
@@ -117,38 +119,47 @@ const CATEGORIES = [
   { id: 6, name: 'Billing', description: 'Invoices, subscriptions, and payment issues', icon: 'CreditCard', created_at: '2024-01-15T08:00:00Z' },
 ];
 
+const DEPARTMENTS = [
+  { id: 1, name: 'IT', description: 'Information Technology department handling infrastructure, systems, and technical support', color: '#1890ff', manager_id: 1, created_at: '2024-01-01T08:00:00Z' },
+  { id: 2, name: 'HR', description: 'Human Resources responsible for recruitment, employee relations, and policies', color: '#52c41a', manager_id: 5, created_at: '2024-01-01T08:00:00Z' },
+  { id: 3, name: 'Finance', description: 'Finance department handling budgets, invoicing, payroll, and accounting', color: '#faad14', manager_id: 8, created_at: '2024-01-01T08:00:00Z' },
+  { id: 4, name: 'Facilities', description: 'Facilities management for office space, maintenance, and physical resources', color: '#722ed1', manager_id: 9, created_at: '2024-01-01T08:00:00Z' },
+  { id: 5, name: 'Sales', description: 'Sales department driving revenue and managing customer relationships', color: '#f5222d', manager_id: 10, created_at: '2024-01-01T08:00:00Z' },
+];
+
 const USERS = [
-  { id: 1, name: 'Sarah Chen', email: 'sarah.chen@company.com', role: 'admin', avatar: '', department: 'IT Operations', created_at: '2024-01-10T08:00:00Z' },
-  { id: 2, name: 'Marcus Johnson', email: 'marcus.j@company.com', role: 'agent', avatar: '', department: 'Technical Support', created_at: '2024-01-12T08:00:00Z' },
-  { id: 3, name: 'Aisha Patel', email: 'aisha.patel@company.com', role: 'agent', avatar: '', department: 'Customer Success', created_at: '2024-01-15T08:00:00Z' },
-  { id: 4, name: 'David Kim', email: 'david.kim@company.com', role: 'agent', avatar: '', department: 'Network Engineering', created_at: '2024-02-01T08:00:00Z' },
-  { id: 5, name: 'Emily Rodriguez', email: 'emily.r@company.com', role: 'viewer', avatar: '', department: 'Human Resources', created_at: '2024-02-10T08:00:00Z' },
-  { id: 6, name: 'James Wilson', email: 'james.w@company.com', role: 'agent', avatar: '', department: 'Software Development', created_at: '2024-02-15T08:00:00Z' },
-  { id: 7, name: 'Liu Wei', email: 'liu.wei@company.com', role: 'admin', avatar: '', department: 'Infrastructure', created_at: '2024-03-01T08:00:00Z' },
-  { id: 8, name: 'Olivia Martinez', email: 'olivia.m@company.com', role: 'viewer', avatar: '', department: 'Finance', created_at: '2024-03-10T08:00:00Z' },
-  { id: 9, name: 'Michael Brown', email: 'michael.b@company.com', role: 'agent', avatar: '', department: 'Field Support', created_at: '2024-03-15T08:00:00Z' },
-  { id: 10, name: 'Sophia Anderson', email: 'sophia.a@company.com', role: 'viewer', avatar: '', department: 'Marketing', created_at: '2024-04-01T08:00:00Z' },
+  { id: 1, name: 'Sarah Chen', email: 'sarah.chen@company.com', role: 'super_admin', avatar: '', department: 'IT Operations', department_id: 1, phone: '+1-555-0101', is_active: true, created_at: '2024-01-10T08:00:00Z' },
+  { id: 2, name: 'Marcus Johnson', email: 'marcus.j@company.com', role: 'admin', avatar: '', department: 'Technical Support', department_id: 1, phone: '+1-555-0102', is_active: true, created_at: '2024-01-12T08:00:00Z' },
+  { id: 3, name: 'Aisha Patel', email: 'aisha.patel@company.com', role: 'manager', avatar: '', department: 'Customer Success', department_id: 1, phone: '+1-555-0103', is_active: true, created_at: '2024-01-15T08:00:00Z' },
+  { id: 4, name: 'David Kim', email: 'david.kim@company.com', role: 'agent', avatar: '', department: 'Network Engineering', department_id: 1, phone: '+1-555-0104', is_active: true, created_at: '2024-02-01T08:00:00Z' },
+  { id: 5, name: 'Emily Rodriguez', email: 'emily.r@company.com', role: 'customer', avatar: '', department: 'Human Resources', department_id: 2, phone: '+1-555-0105', is_active: true, created_at: '2024-02-10T08:00:00Z' },
+  { id: 6, name: 'James Wilson', email: 'james.w@company.com', role: 'agent', avatar: '', department: 'Software Development', department_id: 1, phone: '+1-555-0106', is_active: true, created_at: '2024-02-15T08:00:00Z' },
+  { id: 7, name: 'Liu Wei', email: 'liu.wei@company.com', role: 'admin', avatar: '', department: 'Infrastructure', department_id: 1, phone: '+1-555-0107', is_active: true, created_at: '2024-03-01T08:00:00Z' },
+  { id: 8, name: 'Olivia Martinez', email: 'olivia.m@company.com', role: 'customer', avatar: '', department: 'Finance', department_id: 3, phone: '+1-555-0108', is_active: true, created_at: '2024-03-10T08:00:00Z' },
+  { id: 9, name: 'Michael Brown', email: 'michael.b@company.com', role: 'manager', avatar: '', department: 'Field Support', department_id: 4, phone: '+1-555-0109', is_active: true, created_at: '2024-03-15T08:00:00Z' },
+  { id: 10, name: 'Sophia Anderson', email: 'sophia.a@company.com', role: 'customer', avatar: '', department: 'Marketing', department_id: 5, phone: '+1-555-0110', is_active: true, created_at: '2024-04-01T08:00:00Z' },
+  { id: 11, name: 'Daniel Lee', email: 'daniel.lee@company.com', role: 'agent', avatar: '', department: 'IT Support', department_id: 1, phone: '+1-555-0111', is_active: true, created_at: '2024-04-10T08:00:00Z' },
+  { id: 12, name: 'Rachel Green', email: 'rachel.g@company.com', role: 'manager', avatar: '', department: 'Finance', department_id: 3, phone: '+1-555-0112', is_active: true, created_at: '2024-04-15T08:00:00Z' },
 ];
 
 const TICKETS = [
-  { id: 1, title: 'Laptop not powering on after update', description: 'My work laptop does not power on after the latest system update. The charging light blinks but screen stays black. Tried hard reset with no success.', status: 'open', priority: 'high', category: 'Hardware', created_by: 5, assigned_to: 2, created_at: '2024-12-01T09:30:00Z', updated_at: '2024-12-01T09:30:00Z' },
-  { id: 2, title: 'VPN connection drops every 15 minutes', description: 'The corporate VPN keeps disconnecting approximately every 15 minutes. This started happening yesterday. I have tried reconnecting and restarting the VPN client.', status: 'in_progress', priority: 'high', category: 'Network', created_by: 8, assigned_to: 4, created_at: '2024-12-02T11:15:00Z', updated_at: '2024-12-03T14:20:00Z' },
-  { id: 3, title: 'Request access to Salesforce dashboard', description: 'Need read-only access to the Sales Analytics dashboard in Salesforce for the quarterly review meeting next week.', status: 'resolved', priority: 'medium', category: 'Access', created_by: 10, assigned_to: 1, created_at: '2024-11-28T08:45:00Z', updated_at: '2024-12-02T16:00:00Z' },
-  { id: 4, title: 'Printer on 3rd floor jammed', description: 'The shared printer on the 3rd floor near meeting room B is jammed and displaying error code E-501. Several people have reported this.', status: 'open', priority: 'low', category: 'Hardware', created_by: 6, assigned_to: 9, created_at: '2024-12-03T10:00:00Z', updated_at: '2024-12-03T10:00:00Z' },
-  { id: 5, title: 'Slack notifications not working', description: 'Desktop Slack app is not showing notification badges or playing notification sounds. Mobile app works fine. Already checked system notification settings.', status: 'in_progress', priority: 'medium', category: 'Software', created_by: 3, assigned_to: 6, created_at: '2024-12-01T14:30:00Z', updated_at: '2024-12-04T09:15:00Z' },
-  { id: 6, title: 'New hire laptop setup - Jake Torres', description: 'Need to prepare a development laptop for new hire Jake Torres starting next Monday. Requires Python, Node.js, Docker, and IntelliJ IDEA.', status: 'open', priority: 'medium', category: 'Hardware', created_by: 5, assigned_to: 2, created_at: '2024-12-04T07:00:00Z', updated_at: '2024-12-04T07:00:00Z' },
-  { id: 7, title: 'Database query timeout on reports', description: 'The monthly expense report query is timing out after 60 seconds. This was working fine last week. Need assistance optimizing or checking server load.', status: 'open', priority: 'critical', category: 'Software', created_by: 8, assigned_to: 7, created_at: '2024-12-04T13:45:00Z', updated_at: '2024-12-04T13:45:00Z' },
-  { id: 8, title: 'WiFi keeps disconnecting in conference room A', description: 'WiFi signal in conference room A is very weak and keeps dropping. Affects all meeting participants. Started after the weekend maintenance.', status: 'in_progress', priority: 'high', category: 'Network', created_by: 1, assigned_to: 4, created_at: '2024-12-02T09:00:00Z', updated_at: '2024-12-04T11:30:00Z' },
-  { id: 9, title: 'Reset password for staging environment', description: 'Forgot the admin password for the staging environment. Need a reset link sent to my email.', status: 'resolved', priority: 'low', category: 'Access', created_by: 6, assigned_to: 1, created_at: '2024-11-30T16:20:00Z', updated_at: '2024-12-01T08:00:00Z' },
-  { id: 10, title: 'Adobe Creative Cloud license renewal', description: 'Three Adobe Creative Cloud licenses are expiring this week. Need renewal for the design team.', status: 'on_hold', priority: 'medium', category: 'Software', created_by: 10, assigned_to: 3, created_at: '2024-12-03T11:00:00Z', updated_at: '2024-12-03T15:00:00Z' },
-  { id: 11, title: 'External monitor flickering', description: 'My external monitor connected via USB-C started flickering intermittently. Tried different cables and ports.', status: 'open', priority: 'low', category: 'Hardware', created_by: 5, assigned_to: 9, created_at: '2024-12-04T08:30:00Z', updated_at: '2024-12-04T08:30:00Z' },
-  { id: 12, title: 'Cannot access shared drive \\fileserver\projects', description: 'Getting \"Access Denied\" error when trying to access the projects shared drive. Was working fine until this morning.', status: 'open', priority: 'high', category: 'Network', created_by: 6, assigned_to: 7, created_at: '2024-12-04T10:15:00Z', updated_at: '2024-12-04T10:15:00Z' },
-  { id: 13, title: 'Git repository permission issue', description: 'Getting 403 errors when pushing to the vedadesk-frontend repository. Need write permissions restored.', status: 'in_progress', priority: 'medium', category: 'Access', created_by: 6, assigned_to: 1, created_at: '2024-12-03T09:45:00Z', updated_at: '2024-12-04T08:00:00Z' },
-  { id: 14, title: 'Invoice #2847 incorrect amount', description: 'The cloud hosting invoice for November shows double the expected amount. Please review and correct before payment processing on Friday.', status: 'open', priority: 'medium', category: 'Billing', created_by: 8, assigned_to: 3, created_at: '2024-12-04T12:00:00Z', updated_at: '2024-12-04T12:00:00Z' },
-  { id: 15, title: 'Conference room projector not detected', description: 'The projector in conference room C is not being detected by any laptops via HDMI or wireless casting.', status: 'open', priority: 'low', category: 'Hardware', created_by: 10, assigned_to: 9, created_at: '2024-12-04T15:30:00Z', updated_at: '2024-12-04T15:30:00Z' },
-  { id: 16, title: 'Jira board custom field not saving', description: 'Custom field \"Effort Estimate\" on the Engineering Scrum board is not saving values. Returns to blank after page refresh.', status: 'in_progress', priority: 'medium', category: 'Software', created_by: 6, assigned_to: 6, created_at: '2024-12-02T10:30:00Z', updated_at: '2024-12-04T09:45:00Z' },
+  { id: 1, title: 'Laptop not powering on after update', description: 'My work laptop does not power on after the latest system update. The charging light blinks but screen stays black. Tried hard reset with no success.', status: 'open', priority: 'high', category: 'Hardware', ticket_type: 'incident', department_id: 1, created_by: 5, assigned_to: 2, created_at: '2024-12-01T09:30:00Z', updated_at: '2024-12-01T09:30:00Z' },
+  { id: 2, title: 'VPN connection drops every 15 minutes', description: 'The corporate VPN keeps disconnecting approximately every 15 minutes. This started happening yesterday. I have tried reconnecting and restarting the VPN client.', status: 'in_progress', priority: 'high', category: 'Network', ticket_type: 'incident', department_id: 1, created_by: 8, assigned_to: 4, created_at: '2024-12-02T11:15:00Z', updated_at: '2024-12-03T14:20:00Z' },
+  { id: 3, title: 'Request access to Salesforce dashboard', description: 'Need read-only access to the Sales Analytics dashboard in Salesforce for the quarterly review meeting next week.', status: 'resolved', priority: 'medium', category: 'Access', ticket_type: 'service_request', department_id: 5, created_by: 10, assigned_to: 1, created_at: '2024-11-28T08:45:00Z', updated_at: '2024-12-02T16:00:00Z' },
+  { id: 4, title: 'Printer on 3rd floor jammed', description: 'The shared printer on the 3rd floor near meeting room B is jammed and displaying error code E-501. Several people have reported this.', status: 'open', priority: 'low', category: 'Hardware', ticket_type: 'incident', department_id: 4, created_by: 6, assigned_to: 9, created_at: '2024-12-03T10:00:00Z', updated_at: '2024-12-03T10:00:00Z' },
+  { id: 5, title: 'Slack notifications not working', description: 'Desktop Slack app is not showing notification badges or playing notification sounds. Mobile app works fine. Already checked system notification settings.', status: 'in_progress', priority: 'medium', category: 'Software', ticket_type: 'problem', department_id: 1, created_by: 3, assigned_to: 6, created_at: '2024-12-01T14:30:00Z', updated_at: '2024-12-04T09:15:00Z' },
+  { id: 6, title: 'New hire laptop setup - Jake Torres', description: 'Need to prepare a development laptop for new hire Jake Torres starting next Monday. Requires Python, Node.js, Docker, and IntelliJ IDEA.', status: 'open', priority: 'medium', category: 'Hardware', ticket_type: 'service_request', department_id: 1, created_by: 5, assigned_to: 2, created_at: '2024-12-04T07:00:00Z', updated_at: '2024-12-04T07:00:00Z' },
+  { id: 7, title: 'Database query timeout on reports', description: 'The monthly expense report query is timing out after 60 seconds. This was working fine last week. Need assistance optimizing or checking server load.', status: 'open', priority: 'critical', category: 'Software', ticket_type: 'problem', department_id: 3, created_by: 8, assigned_to: 7, created_at: '2024-12-04T13:45:00Z', updated_at: '2024-12-04T13:45:00Z' },
+  { id: 8, title: 'WiFi keeps disconnecting in conference room A', description: 'WiFi signal in conference room A is very weak and keeps dropping. Affects all meeting participants. Started after the weekend maintenance.', status: 'in_progress', priority: 'high', category: 'Network', ticket_type: 'incident', department_id: 1, created_by: 1, assigned_to: 4, created_at: '2024-12-02T09:00:00Z', updated_at: '2024-12-04T11:30:00Z' },
+  { id: 9, title: 'Reset password for staging environment', description: 'Forgot the admin password for the staging environment. Need a reset link sent to my email.', status: 'resolved', priority: 'low', category: 'Access', ticket_type: 'service_request', department_id: 1, created_by: 6, assigned_to: 1, created_at: '2024-11-30T16:20:00Z', updated_at: '2024-12-01T08:00:00Z' },
+  { id: 10, title: 'Adobe Creative Cloud license renewal', description: 'Three Adobe Creative Cloud licenses are expiring this week. Need renewal for the design team.', status: 'on_hold', priority: 'medium', category: 'Software', ticket_type: 'change', department_id: 3, created_by: 10, assigned_to: 3, created_at: '2024-12-03T11:00:00Z', updated_at: '2024-12-03T15:00:00Z' },
+  { id: 11, title: 'External monitor flickering', description: 'My external monitor connected via USB-C started flickering intermittently. Tried different cables and ports.', status: 'open', priority: 'low', category: 'Hardware', ticket_type: 'incident', department_id: 1, created_by: 5, assigned_to: 9, created_at: '2024-12-04T08:30:00Z', updated_at: '2024-12-04T08:30:00Z' },
+  { id: 12, title: 'Cannot access shared drive', description: 'Getting "Access Denied" error when trying to access the projects shared drive. Was working fine until this morning.', status: 'open', priority: 'high', category: 'Network', ticket_type: 'incident', department_id: 2, created_by: 6, assigned_to: 7, created_at: '2024-12-04T10:15:00Z', updated_at: '2024-12-04T10:15:00Z' },
+  { id: 13, title: 'Git repository permission issue', description: 'Getting 403 errors when pushing to the vedadesk-frontend repository. Need write permissions restored.', status: 'in_progress', priority: 'medium', category: 'Access', ticket_type: 'service_request', department_id: 1, created_by: 6, assigned_to: 1, created_at: '2024-12-03T09:45:00Z', updated_at: '2024-12-04T08:00:00Z' },
+  { id: 14, title: 'Invoice #2847 incorrect amount', description: 'The cloud hosting invoice for November shows double the expected amount. Please review and correct before payment processing on Friday.', status: 'open', priority: 'medium', category: 'Billing', ticket_type: 'problem', department_id: 3, created_by: 8, assigned_to: 3, created_at: '2024-12-04T12:00:00Z', updated_at: '2024-12-04T12:00:00Z' },
+  { id: 15, title: 'Conference room projector not detected', description: 'The projector in conference room C is not being detected by any laptops via HDMI or wireless casting.', status: 'open', priority: 'low', category: 'Hardware', ticket_type: 'incident', department_id: 4, created_by: 10, assigned_to: 9, created_at: '2024-12-04T15:30:00Z', updated_at: '2024-12-04T15:30:00Z' },
+  { id: 16, title: 'Jira board custom field not saving', description: 'Custom field "Effort Estimate" on the Engineering Scrum board is not saving values. Returns to blank after page refresh.', status: 'in_progress', priority: 'medium', category: 'Software', ticket_type: 'problem', department_id: 1, created_by: 6, assigned_to: 6, created_at: '2024-12-02T10:30:00Z', updated_at: '2024-12-04T09:45:00Z' },
 ];
-
 const COMMENTS = [
   { id: 1, ticket_id: 1, user_id: 2, content: 'Hi Emily, can you try holding the power button for 30 seconds without the charger connected? Also, what laptop model are you using?', created_at: '2024-12-01T10:00:00Z' },
   { id: 2, ticket_id: 1, user_id: 5, content: 'It is a Dell Latitude 7430. I tried the 30-second hold but no luck. The charging light still blinks amber.', created_at: '2024-12-01T10:30:00Z' },
@@ -198,13 +209,109 @@ const KNOWLEDGE_ARTICLES = [
   { id: 20, title: 'Security Incident Reporting', content: '# Reporting Security Incidents\n\n## What to Report\n- Phishing emails\n- Suspicious login alerts\n- Lost or stolen devices\n- Unauthorized data access\n- Malware or virus infections\n\n## How to Report\n1. **Immediate threat**: Call Security Hotline at x9999\n2. **Standard report**: Create a ticket with category "Security"\n3. **Email reports**: Forward phishing emails to security@company.com\n\n## What Happens Next\n- Acknowledgment within 1 hour\n- Investigation within 4 hours\n- Resolution updates every 24 hours\n- Post-incident review for major events\n\n## Do NOT\n- Forward suspicious emails to others\n- Click links in suspicious messages\n- Attempt to investigate malware yourself\n- Delay reporting due to uncertainty', category: 'General', tags: 'security,incident,reporting', views: 198, author_id: 1, created_at: '2024-11-01T08:00:00Z', updated_at: '2024-12-04T10:00:00Z' },
 ];
 
+
+const SLA_POLICIES = [
+  { id: 1, name: 'Critical Incident', description: 'For critical system outages and major disruptions', priority: 'critical', response_time_minutes: 15, resolution_time_minutes: 240, business_hours_only: false, department_id: 1, created_at: '2024-01-01T08:00:00Z' },
+  { id: 2, name: 'High Priority', description: 'For high priority incidents affecting multiple users', priority: 'high', response_time_minutes: 60, resolution_time_minutes: 480, business_hours_only: true, department_id: 1, created_at: '2024-01-01T08:00:00Z' },
+  { id: 3, name: 'Standard Support', description: 'Default SLA for general support requests', priority: 'medium', response_time_minutes: 240, resolution_time_minutes: 1440, business_hours_only: true, department_id: 1, created_at: '2024-01-01T08:00:00Z' },
+  { id: 4, name: 'Low Priority', description: 'For low priority and feature requests', priority: 'low', response_time_minutes: 480, resolution_time_minutes: 2880, business_hours_only: true, department_id: 1, created_at: '2024-01-01T08:00:00Z' },
+  { id: 5, name: 'HR Confidential', description: 'Special SLA for HR-related confidential tickets', priority: 'high', response_time_minutes: 120, resolution_time_minutes: 720, business_hours_only: true, department_id: 2, created_at: '2024-02-01T08:00:00Z' },
+];
+
+const CANNED_RESPONSES = [
+  { id: 1, title: 'Password Reset Instructions', content: 'Hello,\n\nTo reset your password, please follow these steps:\n1. Go to the login page and click "Forgot Password"\n2. Enter your email address\n3. Check your inbox for the reset link\n4. Click the link and enter your new password\n\nIf you need further assistance, let us know.', category: 'Access', tags: 'password,reset', usage_count: 47, created_by: 1, created_at: '2024-01-15T08:00:00Z' },
+  { id: 2, title: 'VPN Troubleshooting Steps', content: 'Thank you for contacting support.\n\nPlease try the following VPN troubleshooting steps:\n1. Disconnect and reconnect to VPN\n2. Restart the VPN client\n3. Check your internet connection\n4. Clear DNS cache: ipconfig /flushdns\n5. Try a different VPN gateway\n\nLet us know if the issue persists.', category: 'Network', tags: 'vpn,troubleshooting', usage_count: 32, created_by: 4, created_at: '2024-02-01T08:00:00Z' },
+  { id: 3, title: 'Software Installation Request', content: 'Hi,\n\nWe have received your software installation request. Our team will review the request and get back to you within 24 hours.\n\nPlease ensure you have approval from your manager for any licensed software.\n\nBest regards,\nIT Support', category: 'Software', tags: 'software,installation', usage_count: 28, created_by: 2, created_at: '2024-02-15T08:00:00Z' },
+  { id: 4, title: 'Hardware Replacement Approval', content: 'Your hardware replacement request has been approved.\n\nWe will order the replacement device and notify you when it arrives. Estimated delivery: 5-7 business days.\n\nPlease back up your data before the swap.\n\nThank you,\nIT Operations', category: 'Hardware', tags: 'hardware,replacement', usage_count: 19, created_by: 1, created_at: '2024-03-01T08:00:00Z' },
+  { id: 5, title: 'Access Granted Notification', content: 'Hello,\n\nYour access request has been granted. You should now be able to access the requested resource.\n\nIf you encounter any issues, please reply to this ticket.\n\nBest regards,\nIT Security', category: 'Access', tags: 'access,granted', usage_count: 56, created_by: 1, created_at: '2024-03-15T08:00:00Z' },
+  { id: 6, title: 'Escalation to Network Team', content: 'This ticket has been escalated to the Network Engineering team.\n\nA network specialist will investigate the issue and provide an update within 2 hours.\n\nTicket priority: High\nExpected response: Within 2 hours\n\nNetwork Team', category: 'Network', tags: 'escalation,network', usage_count: 15, created_by: 7, created_at: '2024-04-01T08:00:00Z' },
+  { id: 7, title: 'Out of Office Handover', content: 'Thank you for your message.\n\nI am currently out of office and will return on [DATE]. Your ticket has been assigned to a colleague who will assist you in my absence.\n\nFor urgent matters, please contact the IT hotline at x9999.\n\nBest regards', category: 'General', tags: 'ooo,handover', usage_count: 12, created_by: 3, created_at: '2024-04-15T08:00:00Z' },
+  { id: 8, title: 'Meeting Room AV Setup', content: 'The AV equipment in the meeting room has been checked and is working correctly.\n\nQuick start guide:\n1. Press the power button on the wall panel\n2. Connect your laptop via HDMI or use wireless casting\n3. Use the in-room microphone for video calls\n\nFor assistance during your meeting, press the IT Support button on the wall panel.\n\nFacilities Team', category: 'Hardware', tags: 'av,meeting room', usage_count: 22, created_by: 9, created_at: '2024-05-01T08:00:00Z' },
+  { id: 9, title: 'Account Locked Recovery', content: 'Your account has been unlocked.\n\nPlease try logging in again. If your account was locked due to too many failed attempts, wait 15 minutes before trying.\n\nFor security reasons, please ensure your password meets our complexity requirements:\n- Minimum 8 characters\n- At least one uppercase letter\n- At least one number\n\nIT Security', category: 'Access', tags: 'account,locked', usage_count: 38, created_by: 7, created_at: '2024-05-15T08:00:00Z' },
+  { id: 10, title: 'Feedback Request', content: 'Hi,\n\nWe hope your issue has been resolved satisfactorily.\n\nWe would appreciate your feedback on the support you received. Please take a moment to rate your experience by replying to this email.\n\nYour feedback helps us improve our services.\n\nThank you,\nCustomer Success Team', category: 'General', tags: 'feedback,csat', usage_count: 41, created_by: 3, created_at: '2024-06-01T08:00:00Z' },
+];
+
+const ANNOUNCEMENTS = [
+  { id: 1, title: 'System Maintenance - Dec 8', content: 'Scheduled maintenance on Dec 8, 2024 at 02:00 UTC. Expected downtime: 2 hours. All services will be temporarily unavailable.', target_roles: 'admin,agent,user', is_pinned: true, published_by: 1, published_at: '2024-12-01T08:00:00Z', expires_at: '2024-12-09T08:00:00Z' },
+  { id: 2, title: 'New VPN Client Rollout', content: 'We are rolling out a new VPN client starting next week. Please update your client by Dec 15. Instructions will be sent via email.', target_roles: 'admin,agent,user', is_pinned: false, published_by: 1, published_at: '2024-12-02T08:00:00Z', expires_at: '2024-12-20T08:00:00Z' },
+  { id: 3, title: 'Office Closure - Holiday Period', content: 'The office will be closed from Dec 23 to Jan 2 for the holiday period. Remote support will be available for critical issues only.', target_roles: 'admin,agent,user', is_pinned: true, published_by: 5, published_at: '2024-12-03T08:00:00Z', expires_at: '2025-01-03T08:00:00Z' },
+  { id: 4, title: 'Security Awareness Training', content: 'Mandatory security awareness training is due by Dec 31. Please complete the online module via the HR portal.', target_roles: 'admin,agent', is_pinned: false, published_by: 5, published_at: '2024-12-04T08:00:00Z', expires_at: '2024-12-31T23:59:59Z' },
+  { id: 5, title: 'New Hire Onboarding Update', content: 'The onboarding process has been updated with new checklists. Managers, please review the updated documentation.', target_roles: 'admin', is_pinned: false, published_by: 5, published_at: '2024-11-28T08:00:00Z', expires_at: '2024-12-31T23:59:59Z' },
+];
+
+const SERVICE_CATALOG_ITEMS = [
+  { id: 1, name: 'Laptop Provisioning', description: 'Request a new laptop or replacement device. Includes standard software installation.', category: 'Hardware', estimated_days: 3, approval_required: true, cost: 0, department_id: 1, is_active: true, created_at: '2024-01-01T08:00:00Z' },
+  { id: 2, name: 'Software License Request', description: 'Request a new software license or renewal of an existing license.', category: 'Software', estimated_days: 2, approval_required: true, cost: 0, department_id: 1, is_active: true, created_at: '2024-01-01T08:00:00Z' },
+  { id: 3, name: 'VPN Access Setup', description: 'Request VPN access for remote work or travel.', category: 'Network', estimated_days: 1, approval_required: false, cost: 0, department_id: 1, is_active: true, created_at: '2024-01-01T08:00:00Z' },
+  { id: 4, name: 'Email Distribution Group', description: 'Create or modify an email distribution group.', category: 'Access', estimated_days: 1, approval_required: false, cost: 0, department_id: 1, is_active: true, created_at: '2024-01-01T08:00:00Z' },
+  { id: 5, name: 'Conference Room Booking Setup', description: 'Request access to conference room booking system or resolve booking issues.', category: 'Facilities', estimated_days: 1, approval_required: false, cost: 0, department_id: 4, is_active: true, created_at: '2024-02-01T08:00:00Z' },
+  { id: 6, name: 'New Employee Account Setup', description: 'Complete IT onboarding package for new hires including accounts, laptop, and access.', category: 'Access', estimated_days: 2, approval_required: true, cost: 0, department_id: 1, is_active: true, created_at: '2024-02-01T08:00:00Z' },
+];
+
+const TIME_ENTRIES = [
+  { id: 1, ticket_id: 1, user_id: 2, minutes: 45, description: 'Initial diagnosis and troubleshooting', billable: true, created_at: '2024-12-01T10:00:00Z' },
+  { id: 2, ticket_id: 1, user_id: 2, minutes: 30, description: 'Hardware inspection and reset attempts', billable: true, created_at: '2024-12-01T11:00:00Z' },
+  { id: 3, ticket_id: 2, user_id: 4, minutes: 20, description: 'VPN gateway analysis', billable: true, created_at: '2024-12-02T12:00:00Z' },
+  { id: 4, ticket_id: 2, user_id: 4, minutes: 60, description: 'Policy fix and testing', billable: true, created_at: '2024-12-03T14:00:00Z' },
+  { id: 5, ticket_id: 3, user_id: 1, minutes: 15, description: 'Access review and approval', billable: false, created_at: '2024-12-02T16:00:00Z' },
+  { id: 6, ticket_id: 5, user_id: 6, minutes: 25, description: 'Slack reinstallation guidance', billable: true, created_at: '2024-12-03T09:00:00Z' },
+  { id: 7, ticket_id: 7, user_id: 7, minutes: 90, description: 'Database query analysis', billable: true, created_at: '2024-12-04T14:00:00Z' },
+  { id: 8, ticket_id: 8, user_id: 4, minutes: 40, description: 'AP firmware rollback', billable: true, created_at: '2024-12-04T11:00:00Z' },
+  { id: 9, ticket_id: 12, user_id: 7, minutes: 15, description: 'Permission restoration', billable: true, created_at: '2024-12-04T10:30:00Z' },
+  { id: 10, ticket_id: 16, user_id: 6, minutes: 120, description: 'Plugin conflict investigation', billable: true, created_at: '2024-12-04T09:00:00Z' },
+];
+
+const CSAT_RATINGS = [
+  { id: 1, ticket_id: 3, rating: 5, comment: 'Sarah was very helpful and resolved my issue quickly!', submitted_by: 10, submitted_at: '2024-12-03T08:00:00Z' },
+  { id: 2, ticket_id: 9, rating: 4, comment: 'Good service, password reset was fast.', submitted_by: 6, submitted_at: '2024-12-02T10:00:00Z' },
+  { id: 3, ticket_id: 1, rating: 3, comment: 'Still waiting for resolution, but agent was communicative.', submitted_by: 5, submitted_at: '2024-12-03T14:00:00Z' },
+  { id: 4, ticket_id: 8, rating: 5, comment: 'David fixed the WiFi issue very quickly. Great work!', submitted_by: 1, submitted_at: '2024-12-04T16:00:00Z' },
+  { id: 5, ticket_id: 13, rating: 4, comment: 'Issue resolved within expected time.', submitted_by: 6, submitted_at: '2024-12-04T10:00:00Z' },
+  { id: 6, ticket_id: 2, rating: 4, comment: 'VPN is stable now, thanks for the quick fix.', submitted_by: 8, submitted_at: '2024-12-04T09:00:00Z' },
+  { id: 7, ticket_id: 14, rating: 2, comment: 'Invoice issue still not fully resolved.', submitted_by: 8, submitted_at: '2024-12-04T14:00:00Z' },
+  { id: 8, ticket_id: 4, rating: 3, comment: 'Printer still has issues occasionally.', submitted_by: 6, submitted_at: '2024-12-04T11:00:00Z' },
+];
+
+const AUDIT_LOGS = [
+  { id: 1, action: 'login', entity_type: 'user', entity_id: 1, user_id: 1, details: 'User logged in from IP 192.168.1.100', ip_address: '192.168.1.100', created_at: '2024-12-01T08:00:00Z' },
+  { id: 2, action: 'ticket_created', entity_type: 'ticket', entity_id: 1, user_id: 5, details: 'Ticket #1 created: Laptop not powering on after update', ip_address: '192.168.1.105', created_at: '2024-12-01T09:30:00Z' },
+  { id: 3, action: 'ticket_assigned', entity_type: 'ticket', entity_id: 1, user_id: 2, details: 'Ticket #1 assigned to Marcus Johnson', ip_address: '192.168.1.102', created_at: '2024-12-01T09:45:00Z' },
+  { id: 4, action: 'login', entity_type: 'user', entity_id: 4, user_id: 4, details: 'User logged in from IP 192.168.1.104', ip_address: '192.168.1.104', created_at: '2024-12-02T08:30:00Z' },
+  { id: 5, action: 'ticket_created', entity_type: 'ticket', entity_id: 2, user_id: 8, details: 'Ticket #2 created: VPN connection drops every 15 minutes', ip_address: '192.168.1.108', created_at: '2024-12-02T11:15:00Z' },
+  { id: 6, action: 'ticket_resolved', entity_type: 'ticket', entity_id: 3, user_id: 1, details: 'Ticket #3 resolved: Access granted to Salesforce dashboard', ip_address: '192.168.1.100', created_at: '2024-12-02T16:00:00Z' },
+  { id: 7, action: 'user_updated', entity_type: 'user', entity_id: 6, user_id: 1, details: 'Updated user profile for James Wilson', ip_address: '192.168.1.100', created_at: '2024-12-03T10:00:00Z' },
+  { id: 8, action: 'login_failed', entity_type: 'user', entity_id: 0, user_id: 10, details: 'Failed login attempt from IP 192.168.1.110', ip_address: '192.168.1.110', created_at: '2024-12-03T14:00:00Z' },
+  { id: 9, action: 'kb_created', entity_type: 'knowledge_article', entity_id: 21, user_id: 6, details: 'New KB article created: Teams Audio Troubleshooting', ip_address: '192.168.1.106', created_at: '2024-12-03T16:00:00Z' },
+  { id: 10, action: 'ticket_updated', entity_type: 'ticket', entity_id: 8, user_id: 4, details: 'Ticket #8 status changed to in_progress', ip_address: '192.168.1.104', created_at: '2024-12-04T11:30:00Z' },
+  { id: 11, action: 'settings_changed', entity_type: 'setting', entity_id: 0, user_id: 1, details: 'SLA policy Critical Incident was updated', ip_address: '192.168.1.100', created_at: '2024-12-04T09:00:00Z' },
+  { id: 12, action: 'user_created', entity_type: 'user', entity_id: 13, user_id: 1, details: 'New user created: Thomas Wright', ip_address: '192.168.1.100', created_at: '2024-12-04T13:00:00Z' },
+  { id: 13, action: 'ticket_deleted', entity_type: 'ticket', entity_id: 17, user_id: 1, details: 'Duplicate ticket #17 was deleted', ip_address: '192.168.1.100', created_at: '2024-12-04T15:00:00Z' },
+  { id: 14, action: 'login', entity_type: 'user', entity_id: 2, user_id: 2, details: 'User logged in from IP 192.168.1.102', ip_address: '192.168.1.102', created_at: '2024-12-04T16:00:00Z' },
+  { id: 15, action: 'automation_triggered', entity_type: 'automation', entity_id: 1, user_id: 0, details: 'Auto-assignment rule triggered for ticket #18', ip_address: 'system', created_at: '2024-12-04T17:00:00Z' },
+];
+
+const AUTOMATION_RULES = [
+  { id: 1, name: 'Auto-assign Hardware Tickets', description: 'Automatically assign hardware tickets to the IT support team lead', trigger: 'ticket_created', conditions: '{"category": "Hardware"}', actions: '{"assign_to": 2, "set_priority": "medium"}', is_active: true, run_count: 23, created_by: 1, created_at: '2024-01-15T08:00:00Z' },
+  { id: 2, name: 'Critical Priority Alert', description: 'Send alert and escalate critical priority tickets immediately', trigger: 'ticket_created', conditions: '{"priority": "critical"}', actions: '{"set_priority": "critical", "notify": [1, 7]}', is_active: true, run_count: 5, created_by: 1, created_at: '2024-02-01T08:00:00Z' },
+  { id: 3, name: 'SLA Breach Warning', description: 'Send warning notification when tickets approach SLA breach', trigger: 'sla_approach', conditions: '{"hours_remaining": 2}', actions: '{"notify": [1], "escalate": true}', is_active: true, run_count: 12, created_by: 7, created_at: '2024-03-01T08:00:00Z' },
+  { id: 4, name: 'Customer Auto-Reply', description: 'Send automatic acknowledgment when customer creates a ticket', trigger: 'ticket_created', conditions: '{"role": "customer"}', actions: '{"send_email": true, "set_status": "open"}', is_active: true, run_count: 45, created_by: 3, created_at: '2024-04-01T08:00:00Z' },
+];
 function seedData(db: DBState): void {
+  db.departments = [...DEPARTMENTS];
   db.categories = [...CATEGORIES];
   db.users = [...USERS];
   db.tickets = [...TICKETS];
   db.comments = [...COMMENTS];
   db.activities = [...ACTIVITIES];
   db.knowledge_articles = [...KNOWLEDGE_ARTICLES];
+  db.sla_policies = [...SLA_POLICIES];
+  db.canned_responses = [...CANNED_RESPONSES];
+  db.announcements = [...ANNOUNCEMENTS];
+  db.service_catalog = [...SERVICE_CATALOG_ITEMS];
+  db.time_entries = [...TIME_ENTRIES];
+  db.csat_ratings = [...CSAT_RATINGS];
+  db.audit_logs = [...AUDIT_LOGS];
+  db.automation_rules = [...AUTOMATION_RULES];
 }
 
 // --- Client Factory ---

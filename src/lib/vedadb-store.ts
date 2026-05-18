@@ -4,6 +4,7 @@
 import { create } from 'zustand';
 import type { VedaClient, Result } from './vedadb';
 import { createClient } from './vedadb';
+import { Role, Permission, hasPermission, hasRoleLevel } from './rbac';
 
 interface NotificationItem {
   id: number;
@@ -13,9 +14,21 @@ interface NotificationItem {
   created_at: string;
 }
 
+interface CurrentUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+  department_id?: number;
+  phone?: string;
+  is_active?: boolean;
+  avatar?: string;
+}
+
 interface AppState {
   // Auth
-  currentUser: { id: number; name: string; email: string; role: string } | null;
+  currentUser: CurrentUser | null;
   isAuthenticated: boolean;
 
   // VedaDB
@@ -40,6 +53,10 @@ interface AppState {
   markNotificationRead: (id: number) => void;
   markAllNotificationsRead: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
+
+  // RBAC helpers
+  hasPermission: (permission: Permission) => boolean;
+  hasRoleLevel: (minRole: Role) => boolean;
 
   // Data helpers
   query: (sql: string) => Promise<Result>;
@@ -73,7 +90,17 @@ const useAppStore = create<AppState>((set, get) => ({
     if (users.length === 0) return false;
 
     const user = users[0];
-    const userData = { id: user.id as number, name: user.name as string, email: user.email as string, role: user.role as string };
+    const userData: CurrentUser = {
+      id: user.id as number,
+      name: user.name as string,
+      email: user.email as string,
+      role: user.role as string,
+      department: (user.department as string) || undefined,
+      department_id: (user.department_id as number) || undefined,
+      phone: (user.phone as string) || undefined,
+      is_active: (user.is_active as boolean) ?? undefined,
+      avatar: (user.avatar as string) || undefined,
+    };
 
     set({ currentUser: userData, isAuthenticated: true });
     localStorage.setItem('vedadesk_user', JSON.stringify(userData));
@@ -130,6 +157,22 @@ const useAppStore = create<AppState>((set, get) => ({
 
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
 
+  hasPermission: (permission: Permission) => {
+    const state = get();
+    if (!state.currentUser?.role) return false;
+    const role = Object.values(Role).find((r) => r === state.currentUser!.role);
+    if (!role) return false;
+    return hasPermission(role, permission);
+  },
+
+  hasRoleLevel: (minRole: Role) => {
+    const state = get();
+    if (!state.currentUser?.role) return false;
+    const role = Object.values(Role).find((r) => r === state.currentUser!.role);
+    if (!role) return false;
+    return hasRoleLevel(role, minRole);
+  },
+
   query: async (sql: string) => {
     const state = get();
     if (!state.client) throw new Error('DB not initialized');
@@ -162,4 +205,4 @@ const useAppStore = create<AppState>((set, get) => ({
 }));
 
 export default useAppStore;
-export type { NotificationItem };
+export type { NotificationItem, CurrentUser };

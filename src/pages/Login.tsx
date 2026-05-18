@@ -10,6 +10,8 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '@/lib/vedadb-store';
 import VedaDBStatus from '@/components/VedaDBStatus';
+import RoleBadge from '@/components/RoleBadge';
+import { Role } from '@/lib/rbac';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Invalid email address'),
@@ -168,6 +170,40 @@ const ParticleCanvas = () => {
     />
   );
 };
+
+/* ------------------------------------------------------------------ */
+/*  Quick Login Button                                                 */
+/* ------------------------------------------------------------------ */
+function QuickLoginButton({
+  email,
+  role,
+  label,
+}: {
+  email: string;
+  role: Role;
+  label: string;
+}) {
+  const navigate = useNavigate();
+  const login = useAppStore((s) => s.login);
+
+  const handleClick = async () => {
+    const success = await login(email, 'password');
+    if (success) {
+      navigate('/dashboard');
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="flex items-center gap-1.5 rounded-md border border-[#e5e0d5] bg-white px-2.5 py-1.5 text-xs transition-all hover:border-[#c9a87c] hover:shadow-sm"
+    >
+      <RoleBadge role={role} />
+      <span className="text-[#595959]">{label}</span>
+    </button>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Login Page                                                         */
@@ -345,16 +381,21 @@ export default function Login() {
             </motion.div>
           </form>
 
-          {/* Demo hint */}
+          {/* Quick login buttons */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.2, duration: 0.4 }}
-            className="mt-6 rounded-lg bg-[#f5f0e8] p-3 text-xs text-[#595959]"
+            className="mt-6 rounded-lg bg-[#f5f0e8] p-3"
           >
-            <p className="font-medium text-[#1f1f1f]">Demo credentials:</p>
-            <p className="mt-1">Use any email from the seeded users (e.g., sarah.chen@company.com)</p>
-            <p>Any password with 6+ characters works.</p>
+            <p className="text-xs font-medium text-[#1f1f1f]">Quick login (demo):</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <QuickLoginButton email="sarah.chen@company.com" role={Role.SUPER_ADMIN} label="Super Admin" />
+              <QuickLoginButton email="marcus.j@company.com" role={Role.ADMIN} label="Admin" />
+              <QuickLoginButton email="aisha.patel@company.com" role={Role.MANAGER} label="Manager" />
+              <QuickLoginButton email="david.kim@company.com" role={Role.AGENT} label="Agent" />
+              <QuickLoginButton email="emily.r@company.com" role={Role.CUSTOMER} label="Customer" />
+            </div>
           </motion.div>
 
           {/* VedaDB Connection Status */}

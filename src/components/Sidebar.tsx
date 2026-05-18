@@ -1,5 +1,6 @@
 /**
  * Sidebar Navigation — Responsive sidebar (260px desktop / 64px tablet / bottom bar mobile)
+ * RBAC-aware: conditionally shows nav items based on user role and permissions.
  */
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useMemo } from 'react';
@@ -10,27 +11,115 @@ import {
   BookOpen,
   Settings,
   LogOut,
+  Clock,
+  BarChart3,
+  ShieldCheck,
+  Megaphone,
+  Building2,
+  Zap,
+  MessageSquareQuote,
+  ClipboardList,
+  SmilePlus,
+  Timer,
 } from 'lucide-react';
 import useAppStore from '@/lib/vedadb-store';
+import { usePermission, useAnyPermission } from '@/hooks/useRBAC';
+import RoleBadge from './RoleBadge';
+import { Permission } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
   collapsed?: boolean;
 }
 
-const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-  { icon: Ticket, label: 'Tickets', path: '/tickets' },
-  { icon: Users, label: 'Users', path: '/users' },
-  { icon: BookOpen, label: 'Knowledge', path: '/knowledge' },
-  { icon: Settings, label: 'Settings', path: '/settings' },
-];
+interface NavItem {
+  icon: React.ElementType;
+  label: string;
+  path: string;
+  permission?: Permission;
+}
+
+function useNavItems(): NavItem[] {
+  const canViewUsers = usePermission(Permission.USER_VIEW);
+  const canManageUsers = usePermission(Permission.USER_MANAGE);
+  const canViewSLA = usePermission(Permission.SLA_VIEW);
+  const canViewReports = useAnyPermission([
+    Permission.REPORT_VIEW_ALL,
+    Permission.REPORT_VIEW_OWN,
+  ]);
+  const canViewAudit = usePermission(Permission.AUDIT_VIEW);
+  const canManageAnnouncements = usePermission(Permission.ANNOUNCEMENT_MANAGE);
+  const canManageDepartments = usePermission(Permission.DEPARTMENT_MANAGE);
+  const canManageAutomation = usePermission(Permission.AUTOMATION_MANAGE);
+  const canManageCanned = usePermission(Permission.CANNED_MANAGE);
+  const canManageCatalog = usePermission(Permission.CATALOG_MANAGE);
+  const canViewCSAT = usePermission(Permission.CSAT_VIEW);
+  const canManageSettings = usePermission(Permission.SETTINGS_MANAGE);
+
+  return useMemo(() => {
+    const items: NavItem[] = [
+      { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+      { icon: Ticket, label: 'Tickets', path: '/tickets' },
+      { icon: BookOpen, label: 'Knowledge', path: '/knowledge' },
+    ];
+
+    if (canViewUsers || canManageUsers) {
+      items.push({ icon: Users, label: 'Users', path: '/users' });
+    }
+    if (canViewSLA) {
+      items.push({ icon: Clock, label: 'SLA', path: '/sla' });
+    }
+    if (canViewReports) {
+      items.push({ icon: BarChart3, label: 'Reports', path: '/reports' });
+    }
+    if (canManageCanned) {
+      items.push({ icon: MessageSquareQuote, label: 'Canned', path: '/canned' });
+    }
+    if (canManageAutomation) {
+      items.push({ icon: Zap, label: 'Automation', path: '/automation' });
+    }
+    if (canManageCatalog) {
+      items.push({ icon: ClipboardList, label: 'Catalog', path: '/catalog' });
+    }
+    if (canViewCSAT) {
+      items.push({ icon: SmilePlus, label: 'CSAT', path: '/csat' });
+    }
+    if (canViewAudit) {
+      items.push({ icon: ShieldCheck, label: 'Audit Logs', path: '/audit' });
+    }
+    if (canManageAnnouncements) {
+      items.push({ icon: Megaphone, label: 'Announcements', path: '/announcements' });
+    }
+    if (canManageDepartments) {
+      items.push({ icon: Building2, label: 'Departments', path: '/departments' });
+    }
+    if (canManageSettings) {
+      items.push({ icon: Settings, label: 'Settings', path: '/settings' });
+    }
+    items.push({ icon: Timer, label: 'Time Entries', path: '/time-entries' });
+    return items;
+  }, [
+    canViewUsers,
+    canManageUsers,
+    canViewSLA,
+    canViewReports,
+    canViewAudit,
+    canManageAnnouncements,
+    canManageDepartments,
+    canManageAutomation,
+    canManageCanned,
+    canManageCatalog,
+    canViewCSAT,
+    canManageSettings,
+  ]);
+}
 
 export default function Sidebar({ collapsed = false }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const currentUser = useAppStore((s) => s.currentUser);
   const logout = useAppStore((s) => s.logout);
+  const navItems = useNavItems();
 
   const activePath = location.pathname;
 
@@ -64,8 +153,8 @@ export default function Sidebar({ collapsed = false }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="mt-4 flex flex-1 flex-col gap-1 px-2">
-        {NAV_ITEMS.map((item) => {
+      <nav className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-2">
+        {navItems.map((item) => {
           const active = isActive(item.path);
           return (
             <button
@@ -98,9 +187,9 @@ export default function Sidebar({ collapsed = false }: SidebarProps) {
               <p className="truncate text-sm font-medium text-[#f5f5f5]">
                 {currentUser?.name || 'User'}
               </p>
-              <p className="truncate text-xs capitalize text-[#8a8a8a]">
-                {currentUser?.role || 'agent'}
-              </p>
+              <div className="mt-0.5">
+                <RoleBadge role={currentUser?.role || 'customer'} />
+              </div>
             </div>
           )}
           {!collapsed && (
@@ -122,6 +211,7 @@ export default function Sidebar({ collapsed = false }: SidebarProps) {
 export function MobileBottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
+  const navItems = useNavItems();
 
   const isActive = (path: string) => {
     if (path === '/dashboard') return location.pathname === '/dashboard';
@@ -130,7 +220,7 @@ export function MobileBottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-14 items-center justify-around bg-[#1f1f1f] md:hidden">
-      {NAV_ITEMS.map((item) => {
+      {navItems.slice(0, 5).map((item) => {
         const active = isActive(item.path);
         return (
           <button
