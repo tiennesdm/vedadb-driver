@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <path d="M24 4L8 14v20l16 10 16-10V14L24 4z" fill="#1f1f1f" stroke="#c9a87c" stroke-width="2"/>
+  <path d="M24 4L8 14l16 10 16-10L24 4z" fill="#c9a87c" opacity="0.3"/>
+  <path d="M24 24v20" stroke="#c9a87c" stroke-width="1.5"/>
+  <path d="M24 24L8 14" stroke="#c9a87c" stroke-width="1" opacity="0.5"/>
+  <path d="M24 24l16-10" stroke="#c9a87c" stroke-width="1" opacity="0.5"/>
+</svg>
