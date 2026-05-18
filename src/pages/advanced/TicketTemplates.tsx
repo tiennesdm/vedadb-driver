@@ -1,213 +1,110 @@
-/**
- * TicketTemplates — Manage ticket templates (CRUD)
- * Pre-built: Password Reset, New Laptop, VPN Access, Software Install, Network Issue
- */
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { vedaQuery, vedaExec, toObjects } from '@/lib/vedadb-api';
-import { usePermission } from '@/hooks/useRBAC';
-import { Permission } from '@/lib/rbac';
-import { cn } from '@/lib/utils';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
+import { vedaQuery, vedaExec, toObjects } from '@/lib/vedadb-api';
+import { useIsAdmin } from '@/hooks/useRBAC';
 import {
-  Search,
-  Plus,
-  Pencil,
-  Trash2,
-  FileText,
-  X,
-  Save,
-  Copy,
-  LayoutTemplate,
+  FileText, Plus, Search, Pencil, Trash2, Copy,
+  AlertTriangle, Monitor, Shield
 } from 'lucide-react';
-/* formatDistanceToNow available if needed */
 
-export interface TicketTemplate {
+interface TicketTemplate {
   id: number;
   name: string;
   description: string;
   default_title: string;
   default_description: string;
-  default_priority: 'low' | 'medium' | 'high' | 'critical';
+  default_priority: string;
   default_category: string;
-  custom_fields_json: string;
-  is_prebuilt: number;
+  default_type: string;
+  custom_fields: string;
   is_active: number;
   created_at: string;
-  updated_at: string;
 }
 
-const PRIORITIES: Array<'low' | 'medium' | 'high' | 'critical'> = ['low', 'medium', 'high', 'critical'];
-const CATEGORIES = ['General', 'Hardware', 'Software', 'Network', 'Access', 'Security', 'Other'];
-
-const PREBUILT_TEMPLATES: Omit<TicketTemplate, 'id' | 'created_at' | 'updated_at'>[] = [
-  {
-    name: 'Password Reset',
-    description: 'Request a password reset for user account',
-    default_title: 'Password Reset Request',
-    default_description: 'User requires password reset for their account.\n\nUsername: \nApplication: \nUrgency: ',
-    default_priority: 'medium',
-    default_category: 'Access',
-    custom_fields_json: JSON.stringify([
-      { name: 'username', label: 'Username', type: 'text', required: true },
-      { name: 'application', label: 'Application/System', type: 'text', required: true },
-    ]),
-    is_prebuilt: 1,
-    is_active: 1,
-  },
-  {
-    name: 'New Laptop',
-    description: 'Request a new laptop for employee',
-    default_title: 'New Laptop Request',
-    default_description: 'Employee requires a new laptop.\n\nEmployee Name: \nDepartment: \nJustification: \nPreferred Model: ',
-    default_priority: 'medium',
-    default_category: 'Hardware',
-    custom_fields_json: JSON.stringify([
-      { name: 'employee_name', label: 'Employee Name', type: 'text', required: true },
-      { name: 'department', label: 'Department', type: 'text', required: true },
-      { name: 'preferred_model', label: 'Preferred Model', type: 'text', required: false },
-    ]),
-    is_prebuilt: 1,
-    is_active: 1,
-  },
-  {
-    name: 'VPN Access',
-    description: 'Request VPN access for remote work',
-    default_title: 'VPN Access Request',
-    default_description: 'Employee needs VPN access.\n\nEmployee Name: \nEmail: \nDuration: \nReason: ',
-    default_priority: 'high',
-    default_category: 'Access',
-    custom_fields_json: JSON.stringify([
-      { name: 'employee_email', label: 'Employee Email', type: 'text', required: true },
-      { name: 'duration', label: 'Access Duration', type: 'select', options: ['1 week', '1 month', 'Permanent'], required: true },
-    ]),
-    is_prebuilt: 1,
-    is_active: 1,
-  },
-  {
-    name: 'Software Install',
-    description: 'Request software installation',
-    default_title: 'Software Installation Request',
-    default_description: 'Request to install software on workstation.\n\nSoftware Name: \nVersion: \nLicense Key: \nBusiness Justification: ',
-    default_priority: 'low',
-    default_category: 'Software',
-    custom_fields_json: JSON.stringify([
-      { name: 'software_name', label: 'Software Name', type: 'text', required: true },
-      { name: 'version', label: 'Version', type: 'text', required: false },
-      { name: 'license_key', label: 'License Key', type: 'text', required: false },
-    ]),
-    is_prebuilt: 1,
-    is_active: 1,
-  },
-  {
-    name: 'Network Issue',
-    description: 'Report a network connectivity problem',
-    default_title: 'Network Issue Report',
-    default_description: 'Experiencing network connectivity issues.\n\nLocation: \nDevice(s) Affected: \nIssue Description: \nStarted At: ',
-    default_priority: 'high',
-    default_category: 'Network',
-    custom_fields_json: JSON.stringify([
-      { name: 'location', label: 'Location', type: 'text', required: true },
-      { name: 'device_count', label: 'Devices Affected', type: 'number', required: true },
-    ]),
-    is_prebuilt: 1,
-    is_active: 1,
-  },
+const BUILTIN_TEMPLATES: Omit<TicketTemplate, 'id' | 'created_at'>[] = [
+  { name: 'Password Reset', description: 'Request for password reset', default_title: 'Password Reset Request', default_description: 'User needs password reset for account.', default_priority: 'medium', default_category: 'Access', default_type: 'service_request', custom_fields: '{"system": "text", "urgency_reason": "textarea"}', is_active: 1 },
+  { name: 'New Laptop', description: 'Request new laptop/device', default_title: 'New Laptop Request', default_description: 'Employee needs a new laptop for work.', default_priority: 'medium', default_category: 'Hardware', default_type: 'service_request', custom_fields: '{"device_type": "select:Laptop,Desktop,Tablet", "justification": "textarea"}', is_active: 1 },
+  { name: 'VPN Access', description: 'Request VPN access', default_title: 'VPN Access Request', default_description: 'Request VPN access for remote work.', default_priority: 'medium', default_category: 'Network', default_type: 'service_request', custom_fields: '{"duration": "select:Temporary,Permanent", "access_level": "select:Full,Limited"}', is_active: 1 },
+  { name: 'Software Install', description: 'Request software installation', default_title: 'Software Installation Request', default_description: 'Need software installed on workstation.', default_priority: 'low', default_category: 'Software', default_type: 'service_request', custom_fields: '{"software_name": "text", "license_required": "checkbox"}', is_active: 1 },
+  { name: 'Network Issue', description: 'Report network connectivity problem', default_title: 'Network Connectivity Issue', default_description: 'Experiencing network connectivity issues.', default_priority: 'high', default_category: 'Network', default_type: 'incident', custom_fields: '{"affected_systems": "textarea", "error_message": "text"}', is_active: 1 },
 ];
 
-const BLANK_TEMPLATE: Omit<TicketTemplate, 'id' | 'created_at' | 'updated_at'> = {
-  name: '',
-  description: '',
-  default_title: '',
-  default_description: '',
-  default_priority: 'medium',
-  default_category: 'General',
-  custom_fields_json: '[]',
-  is_prebuilt: 0,
-  is_active: 1,
+const TYPE_ICON: Record<string, typeof FileText> = {
+  incident: AlertTriangle,
+  service_request: FileText,
+  problem: Monitor,
+  change: Shield,
+};
+
+const TYPE_COLOR: Record<string, string> = {
+  incident: 'bg-red-50 text-red-700 border-red-200',
+  service_request: 'bg-blue-50 text-blue-700 border-blue-200',
+  problem: 'bg-orange-50 text-orange-700 border-orange-200',
+  change: 'bg-purple-50 text-purple-700 border-purple-200',
 };
 
 export default function TicketTemplates() {
-  const navigate = useNavigate();
-  const canManage = usePermission(Permission.TICKET_EDIT_ALL);
   const [templates, setTemplates] = useState<TicketTemplate[]>([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TicketTemplate | null>(null);
-  const [form, setForm] = useState(BLANK_TEMPLATE);
-  const [isLoading, setIsLoading] = useState(false);
+  const isAdmin = useIsAdmin();
+
+  const [form, setForm] = useState({
+    name: '', description: '', default_title: '', default_description: '',
+    default_priority: 'medium', default_category: 'General', default_type: 'incident',
+    custom_fields: '',
+  });
 
   const fetchTemplates = useCallback(async () => {
-    setIsLoading(true);
+    setLoading(true);
     try {
-      const sql = `SELECT * FROM ticket_templates ORDER BY is_prebuilt DESC, name ASC`;
-      const res = await vedaQuery(sql);
-      const rows = toObjects(res) as unknown as TicketTemplate[];
-      if (rows.length === 0) {
-        // Seed pre-built templates
-        for (const t of PREBUILT_TEMPLATES) {
-          await vedaExec(
-            `INSERT INTO ticket_templates (name, description, default_title, default_description, default_priority, default_category, custom_fields_json, is_prebuilt, is_active, created_at, updated_at) VALUES ('${t.name}', '${t.description}', '${t.default_title}', '${t.default_description}', '${t.default_priority}', '${t.default_category}', '${t.custom_fields_json}', ${t.is_prebuilt}, ${t.is_active}, datetime('now'), datetime('now'))`
-          );
+      const res = await vedaQuery("SELECT * FROM ticket_templates ORDER BY name");
+      let data = toObjects(res) as unknown as TicketTemplate[];
+      if (data.length === 0) {
+        // Seed built-in templates
+        for (const t of BUILTIN_TEMPLATES) {
+          await vedaExec(`INSERT INTO ticket_templates (name, description, default_title, default_description, default_priority, default_category, default_type, custom_fields, is_active) VALUES ('${t.name}', '${t.description}', '${t.default_title}', '${t.default_description}', '${t.default_priority}', '${t.default_category}', '${t.default_type}', '${t.custom_fields}', 1)`);
         }
-        const res2 = await vedaQuery(sql);
-        setTemplates(toObjects(res2) as unknown as TicketTemplate[]);
-      } else {
-        setTemplates(rows);
+        const res2 = await vedaQuery("SELECT * FROM ticket_templates ORDER BY name");
+        data = toObjects(res2) as unknown as TicketTemplate[];
       }
+      setTemplates(data);
     } catch {
       setTemplates([]);
-    } finally {
-      setIsLoading(false);
     }
+    setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchTemplates();
-  }, [fetchTemplates]);
+  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
-  const filtered = templates.filter(
-    (t) =>
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.description.toLowerCase().includes(search.toLowerCase()) ||
-      t.default_category.toLowerCase().includes(search.toLowerCase())
+  const filtered = templates.filter(t =>
+    t.name.toLowerCase().includes(search.toLowerCase()) ||
+    t.description.toLowerCase().includes(search.toLowerCase()) ||
+    t.default_category.toLowerCase().includes(search.toLowerCase())
   );
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ ...BLANK_TEMPLATE });
+    setForm({ name: '', description: '', default_title: '', default_description: '', default_priority: 'medium', default_category: 'General', default_type: 'incident', custom_fields: '' });
     setModalOpen(true);
   };
 
   const openEdit = (t: TicketTemplate) => {
     setEditing(t);
-    setForm({ ...t });
+    setForm({
+      name: t.name, description: t.description, default_title: t.default_title,
+      default_description: t.default_description, default_priority: t.default_priority,
+      default_category: t.default_category, default_type: t.default_type,
+      custom_fields: t.custom_fields || '',
+    });
     setModalOpen(true);
   };
 
@@ -215,308 +112,158 @@ export default function TicketTemplates() {
     if (!form.name.trim()) return;
     try {
       if (editing) {
-        await vedaExec(
-          `UPDATE ticket_templates SET name='${form.name}', description='${form.description}', default_title='${form.default_title}', default_description='${form.default_description}', default_priority='${form.default_priority}', default_category='${form.default_category}', custom_fields_json='${form.custom_fields_json}', is_active=${form.is_active}, updated_at=datetime('now') WHERE id=${editing.id}`
-        );
+        await vedaExec(`UPDATE ticket_templates SET name='${form.name.replace(/'/g, "''")}', description='${form.description.replace(/'/g, "''")}', default_title='${form.default_title.replace(/'/g, "''")}', default_description='${form.default_description.replace(/'/g, "''")}', default_priority='${form.default_priority}', default_category='${form.default_category}', default_type='${form.default_type}', custom_fields='${form.custom_fields.replace(/'/g, "''")}' WHERE id=${editing.id}`);
       } else {
-        await vedaExec(
-          `INSERT INTO ticket_templates (name, description, default_title, default_description, default_priority, default_category, custom_fields_json, is_prebuilt, is_active, created_at, updated_at) VALUES ('${form.name}', '${form.description}', '${form.default_title}', '${form.default_description}', '${form.default_priority}', '${form.default_category}', '${form.custom_fields_json}', 0, ${form.is_active}, datetime('now'), datetime('now'))`
-        );
+        await vedaExec(`INSERT INTO ticket_templates (name, description, default_title, default_description, default_priority, default_category, default_type, custom_fields, is_active) VALUES ('${form.name.replace(/'/g, "''")}', '${form.description.replace(/'/g, "''")}', '${form.default_title.replace(/'/g, "''")}', '${form.default_description.replace(/'/g, "''")}', '${form.default_priority}', '${form.default_category}', '${form.default_type}', '${form.custom_fields.replace(/'/g, "''")}', 1)`);
       }
       setModalOpen(false);
-      fetchTemplates();
-    } catch {
-      // silent
+      await fetchTemplates();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
     }
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      await vedaExec(`DELETE FROM ticket_templates WHERE id=${id} AND is_prebuilt=0`);
-      fetchTemplates();
-    } catch {
-      // silent
-    }
+    if (!confirm('Delete this template?')) return;
+    await vedaExec(`DELETE FROM ticket_templates WHERE id=${id}`);
+    await fetchTemplates();
   };
 
-  const handleDuplicate = async (t: TicketTemplate) => {
-    try {
-      await vedaExec(
-        `INSERT INTO ticket_templates (name, description, default_title, default_description, default_priority, default_category, custom_fields_json, is_prebuilt, is_active, created_at, updated_at) VALUES ('${t.name} (Copy)', '${t.description}', '${t.default_title}', '${t.default_description}', '${t.default_priority}', '${t.default_category}', '${t.custom_fields_json}', 0, 1, datetime('now'), datetime('now'))`
-      );
-      fetchTemplates();
-    } catch {
-      // silent
-    }
-  };
-
-  const useTemplate = (t: TicketTemplate) => {
-    const params = new URLSearchParams({
-      template: t.id.toString(),
-      title: t.default_title,
-      description: t.default_description,
-      priority: t.default_priority,
-      category: t.default_category,
-    });
-    navigate(`/tickets?${params.toString()}`);
+  const handleUse = (t: TicketTemplate) => {
+    alert(`Template "${t.name}" ready to use. Navigate to Tickets → Create to apply.`);
   };
 
   return (
-    <div className="space-y-4 p-6 bg-[#fbf9f4] min-h-screen">
+    <div className="p-6 md:p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-[#262626]">Ticket Templates</h1>
-          <p className="text-xs text-[#8a8a8a] mt-0.5">Pre-built and custom templates for quick ticket creation</p>
+          <h1 className="text-2xl font-semibold text-[#1f1f1f] tracking-tight">Ticket Templates</h1>
+          <p className="text-sm text-[#595959] mt-1">Pre-defined templates for common ticket types</p>
         </div>
-        {canManage && (
-          <Button
-            onClick={openCreate}
-            className="bg-[#c9a87c] hover:bg-[#b8996a] text-white text-xs h-8"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            New Template
+        {isAdmin && (
+          <Button onClick={openCreate} className="bg-[#c9a87c] hover:bg-[#b8976b] text-white gap-2">
+            <Plus size={16} /> New Template
           </Button>
         )}
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8a8a8a]" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search templates..."
-          className="pl-8 text-sm h-8 border-[#e5e0d5] bg-white focus:border-[#c9a87c] focus:ring-[#c9a87c]"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
-            <X className="h-3 w-3 text-[#8a8a8a]" />
-          </button>
-        )}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" size={18} />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search templates..." className="pl-10 bg-white border-[#e5e0d5]" />
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-[#e5e0d5] bg-white overflow-hidden">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#e5e0d5] border-t-[#c9a87c]" />
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-[#fbf9f4] hover:bg-[#fbf9f4]">
-                <TableHead className="text-xs font-medium text-[#595959]">Template</TableHead>
-                <TableHead className="text-xs font-medium text-[#595959]">Category</TableHead>
-                <TableHead className="text-xs font-medium text-[#595959]">Priority</TableHead>
-                <TableHead className="text-xs font-medium text-[#595959]">Type</TableHead>
-                <TableHead className="text-xs font-medium text-[#595959]">Status</TableHead>
-                <TableHead className="text-xs font-medium text-[#595959] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((t) => (
-                <TableRow key={t.id} className="hover:bg-[#fbf9f4]">
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <LayoutTemplate className="h-3.5 w-3.5 text-[#c9a87c]" />
-                      <div>
-                        <p className="text-sm font-medium text-[#262626]">{t.name}</p>
-                        <p className="text-[11px] text-[#8a8a8a] truncate max-w-[200px]">{t.description}</p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#f5f3ef] text-[#595959]">
-                      {t.default_category}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className={cn(
-                      'text-xs px-2 py-0.5 rounded-full capitalize',
-                      t.default_priority === 'critical' && 'bg-red-50 text-red-600',
-                      t.default_priority === 'high' && 'bg-orange-50 text-orange-600',
-                      t.default_priority === 'medium' && 'bg-blue-50 text-blue-600',
-                      t.default_priority === 'low' && 'bg-gray-50 text-gray-600',
-                    )}>
-                      {t.default_priority}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {t.is_prebuilt ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-[#c9a87c]/10 text-[#c9a87c]">Pre-built</span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-[#f5f3ef] text-[#595959]">Custom</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className={cn(
-                      'text-xs',
-                      t.is_active ? 'text-green-600' : 'text-[#8a8a8a]'
-                    )}>
-                      {t.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-[#c9a87c] hover:text-[#b8996a] hover:bg-[#f5f3ef]"
-                        onClick={() => useTemplate(t)}
-                      >
-                        <FileText className="h-3 w-3 mr-0.5" />
-                        Use
-                      </Button>
-                      {canManage && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-[#8a8a8a] hover:text-[#262626]"
-                            onClick={() => openEdit(t)}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-[#8a8a8a] hover:text-[#c9a87c]"
-                            onClick={() => handleDuplicate(t)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                          {!t.is_prebuilt && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-[#8a8a8a] hover:text-red-500"
-                              onClick={() => handleDelete(t.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filtered.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-sm text-[#8a8a8a]">
-                    No templates found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+      {/* Templates Grid */}
+      {loading ? (
+        <div className="text-center py-20 text-[#8a8a8a]">Loading templates...</div>
+      ) : filtered.length === 0 ? (
+        <Card className="p-12 text-center border-[#e5e0d5]">
+          <FileText className="mx-auto mb-3 text-[#8a8a8a]" size={40} />
+          <p className="text-[#595959]">No templates found</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(t => {
+            const TypeIcon = TYPE_ICON[t.default_type] || FileText;
+            return (
+              <Card key={t.id} className="p-5 border-[#e5e0d5] hover:border-[#c9a87c] transition-colors">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#f5f0e8] flex items-center justify-center flex-shrink-0">
+                    <TypeIcon size={20} className="text-[#c9a87c]" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-[#1f1f1f] text-sm truncate">{t.name}</h3>
+                    <p className="text-xs text-[#595959] truncate">{t.description}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <Badge variant="outline" className={TYPE_COLOR[t.default_type] || 'bg-gray-50 text-gray-700'}>{t.default_type.replace('_', ' ')}</Badge>
+                  <Badge variant="outline" className="text-[#595959]">{t.default_priority}</Badge>
+                  <Badge variant="outline" className="text-[#595959]">{t.default_category}</Badge>
+                </div>
+                <div className="text-xs text-[#8a8a8a] mb-3 bg-[#fbf9f4] p-2 rounded">
+                  <span className="font-medium">Title:</span> {t.default_title}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="flex-1 text-xs border-[#e5e0d5]" onClick={() => handleUse(t)}>
+                    <Copy size={12} className="mr-1" /> Use
+                  </Button>
+                  {isAdmin && (
+                    <>
+                      <Button variant="outline" size="sm" className="border-[#e5e0d5]" onClick={() => openEdit(t)}><Pencil size={12} /></Button>
+                      <Button variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-50" onClick={() => handleDelete(t.id)}><Trash2 size={12} /></Button>
+                    </>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* Create/Edit Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-lg bg-white border-[#e5e0d5] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-[#262626]">
-              {editing ? 'Edit Template' : 'New Template'}
-            </DialogTitle>
+            <DialogTitle className="text-lg">{editing ? 'Edit Template' : 'New Template'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4 pt-2">
             <div>
-              <Label className="text-xs text-[#595959]">Name</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                placeholder="Template name"
-                className="mt-1 text-sm border-[#e5e0d5] bg-[#fbf9f4] focus:border-[#c9a87c] focus:ring-[#c9a87c]"
-              />
+              <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Name</label>
+              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Template name" className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs text-[#595959]">Description</Label>
-              <Input
-                value={form.description}
-                onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                placeholder="Brief description"
-                className="mt-1 text-sm border-[#e5e0d5] bg-[#fbf9f4] focus:border-[#c9a87c] focus:ring-[#c9a87c]"
-              />
+              <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Description</label>
+              <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Brief description" className="mt-1" rows={2} />
             </div>
             <div>
-              <Label className="text-xs text-[#595959]">Default Title</Label>
-              <Input
-                value={form.default_title}
-                onChange={(e) => setForm((p) => ({ ...p, default_title: e.target.value }))}
-                placeholder="Default ticket title"
-                className="mt-1 text-sm border-[#e5e0d5] bg-[#fbf9f4] focus:border-[#c9a87c] focus:ring-[#c9a87c]"
-              />
+              <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Default Title</label>
+              <Input value={form.default_title} onChange={e => setForm({ ...form, default_title: e.target.value })} placeholder="Default ticket title" className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs text-[#595959]">Default Description</Label>
-              <Textarea
-                value={form.default_description}
-                onChange={(e) => setForm((p) => ({ ...p, default_description: e.target.value }))}
-                placeholder="Default ticket description"
-                className="mt-1 text-sm min-h-[80px] border-[#e5e0d5] bg-[#fbf9f4] focus:border-[#c9a87c] focus:ring-[#c9a87c]"
-              />
+              <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Default Description</label>
+              <Textarea value={form.default_description} onChange={e => setForm({ ...form, default_description: e.target.value })} placeholder="Default description" className="mt-1" rows={3} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label className="text-xs text-[#595959]">Priority</Label>
-                <Select
-                  value={form.default_priority}
-                  onValueChange={(v: 'low' | 'medium' | 'high' | 'critical') =>
-                    setForm((p) => ({ ...p, default_priority: v }))
-                  }
-                >
-                  <SelectTrigger className="mt-1 text-sm border-[#e5e0d5] bg-[#fbf9f4] focus:ring-[#c9a87c]">
-                    <SelectValue />
-                  </SelectTrigger>
+                <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Priority</label>
+                <Select value={form.default_priority} onValueChange={v => setForm({ ...form, default_priority: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
-                    ))}
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-[#595959]">Category</Label>
-                <Select
-                  value={form.default_category}
-                  onValueChange={(v) => setForm((p) => ({ ...p, default_category: v }))}
-                >
-                  <SelectTrigger className="mt-1 text-sm border-[#e5e0d5] bg-[#fbf9f4] focus:ring-[#c9a87c]">
-                    <SelectValue />
-                  </SelectTrigger>
+                <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Category</label>
+                <Input value={form.default_category} onChange={e => setForm({ ...form, default_category: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Type</label>
+                <Select value={form.default_type} onValueChange={v => setForm({ ...form, default_type: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
+                    <SelectItem value="incident">Incident</SelectItem>
+                    <SelectItem value="service_request">Service Request</SelectItem>
+                    <SelectItem value="problem">Problem</SelectItem>
+                    <SelectItem value="change">Change</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="flex items-center gap-2 pt-1">
-              <Switch
-                checked={!!form.is_active}
-                onCheckedChange={(v) => setForm((p) => ({ ...p, is_active: v ? 1 : 0 }))}
-              />
-              <Label className="text-xs text-[#595959]">Active</Label>
+            <div>
+              <label className="text-xs font-medium text-[#595959] uppercase tracking-wider">Custom Fields (JSON)</label>
+              <Textarea value={form.custom_fields} onChange={e => setForm({ ...form, custom_fields: e.target.value })} placeholder='{"field_name": "text|select:opt1,opt2|textarea|checkbox|date"}' className="mt-1 font-mono text-xs" rows={2} />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setModalOpen(false)} className="border-[#e5e0d5]">Cancel</Button>
+              <Button onClick={handleSave} className="bg-[#c9a87c] hover:bg-[#b8976b] text-white">{editing ? 'Update' : 'Create'}</Button>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setModalOpen(false)} className="border-[#e5e0d5]">
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={!form.name.trim()}
-              className="bg-[#c9a87c] hover:bg-[#b8996a] text-white"
-            >
-              <Save className="h-3.5 w-3.5 mr-1" />
-              {editing ? 'Update' : 'Create'}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
