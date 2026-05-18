@@ -1,7 +1,7 @@
 /**
  * Knowledge Article Page — Full article view with content rendering, author info, feedback, and related articles
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -16,11 +16,9 @@ import {
   Trash2,
   Share2,
   AlertTriangle,
-  ChevronRight,
   Monitor,
   Wifi,
   Lock,
-  Cpu,
   Code,
   FileText,
   CreditCard,
@@ -83,7 +81,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
   let key = 0;
   let inCodeBlock = false;
   let codeContent = '';
-  let codeLang = '';
   let listItems: string[] = [];
   let listType: 'ul' | 'ol' | null = null;
 
@@ -109,7 +106,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
       </pre>
     );
     codeContent = '';
-    codeLang = '';
     inCodeBlock = false;
   };
 
@@ -166,7 +162,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
       if (!inCodeBlock) {
         flushList();
         inCodeBlock = true;
-        codeLang = line.slice(3).trim();
       } else {
         flushCodeBlock();
       }

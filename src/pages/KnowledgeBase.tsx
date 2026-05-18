@@ -19,7 +19,6 @@ import {
   Monitor,
   Wifi,
   Lock,
-  Cpu,
   Code,
   FileText,
   CreditCard,
@@ -86,15 +85,6 @@ const CATEGORY_ICON: Record<string, { icon: typeof Monitor; color: string }> = {
   Access: { icon: Lock, color: '#722ed1' },
   General: { icon: FileText, color: '#8a8a8a' },
   Billing: { icon: CreditCard, color: '#faad14' },
-};
-
-const CATEGORY_BG: Record<string, string> = {
-  Hardware: 'bg-[rgba(24,144,255,0.05)]',
-  Software: 'bg-[rgba(245,34,45,0.05)]',
-  Network: 'bg-[rgba(82,196,26,0.05)]',
-  Access: 'bg-[rgba(114,46,209,0.05)]',
-  General: 'bg-[rgba(138,138,138,0.05)]',
-  Billing: 'bg-[rgba(250,173,20,0.05)]',
 };
 
 /* ------------------------------------------------------------------ */

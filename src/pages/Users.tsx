@@ -11,7 +11,6 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
-  Shield,
   Ticket,
   CheckCircle,
   X,
