@@ -90,6 +90,7 @@ const PRIORITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 };
 export function useTicketsList() {
   const query = useAppStore((s) => s.query);
   const select = useAppStore((s) => s.select);
+  const currentUser = useAppStore((s) => s.currentUser);
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -100,6 +101,11 @@ export function useTicketsList() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [filters, setFilters] = useState<TicketFilters>(DEFAULT_FILTERS);
+
+  // Role-based filter info
+  const userRole = currentUser?.role || 'customer';
+  const isAdminOrManager = userRole === 'admin' || userRole === 'super_admin' || userRole === 'manager';
+  const isAgent = userRole === 'agent';
 
   // Fetch users
   const fetchUsers = useCallback(async () => {
@@ -121,12 +127,20 @@ export function useTicketsList() {
     }
   }, [select]);
 
-  // Fetch tickets with filters
+  // Fetch tickets with filters + role-based access
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
       let sql = `SELECT t.*, u.name as assignee_name, u.avatar as assignee_avatar FROM tickets t LEFT JOIN users u ON t.assigned_to = u.id`;
       const conditions: string[] = [];
+
+      // Role-based row-level security
+      if (!isAdminOrManager && isAgent && currentUser) {
+        conditions.push(`(t.department_id = ${currentUser.department_id || 0} OR t.assigned_to = ${currentUser.id} OR t.created_by = ${currentUser.id})`);
+      } else if (!isAdminOrManager && !isAgent && currentUser) {
+        // Customer: only own tickets
+        conditions.push(`t.created_by = ${currentUser.id}`);
+      }
 
       if (filters.status) conditions.push(`t.status = '${filters.status}'`);
       if (filters.priority) conditions.push(`t.priority = '${filters.priority}'`);
@@ -174,7 +188,7 @@ export function useTicketsList() {
     } finally {
       setLoading(false);
     }
-  }, [query, select, filters, page, pageSize]);
+  }, [query, select, filters, page, pageSize, currentUser, isAdminOrManager, isAgent]);
 
   useEffect(() => {
     fetchUsers();
@@ -184,6 +198,13 @@ export function useTicketsList() {
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  // Expose role info for the UI
+  const canDelete = isAdminOrManager;
+  const canAssign = isAdminOrManager;
+  const canBulkOps = isAdminOrManager;
+  const canEditAll = isAdminOrManager;
+  const canEditAssigned = isAgent || isAdminOrManager;
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -209,6 +230,13 @@ export function useTicketsList() {
     setFilters,
     activeFilterCount,
     refresh: fetchTickets,
+    // RBAC helpers
+    canDelete,
+    canAssign,
+    canBulkOps,
+    canEditAll,
+    canEditAssigned,
+    userRole,
   };
 }
 

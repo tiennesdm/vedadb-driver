@@ -1,10 +1,37 @@
 /**
- * Browser-compatible VedaDB mock client
- * Provides the same API as the real vedadb npm package but uses localStorage for persistence.
- * Seeds realistic mock data on first load.
+ * VedaDB Client — Browser-compatible with real driver integration
+ * Tries to connect to real VedaDB server, falls back to localStorage mock.
  */
 
 export { Role, TicketType, Permission } from './rbac';
+
+/* ------------------------------------------------------------------ */
+/*  Real driver integration (best-effort)                              */
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  Connection config                                                  */
+/* ------------------------------------------------------------------ */
+
+export const DEFAULT_CONFIG = {
+  host: 'localhost',
+  port: 6380,
+  timeout: 30000,
+};
+
+export function setConnectionConfig(host: string, port: number) {
+  DEFAULT_CONFIG.host = host;
+  DEFAULT_CONFIG.port = port;
+  try { localStorage.setItem('vedadb_config', JSON.stringify(DEFAULT_CONFIG)); } catch { /* */ }
+}
+
+export function getConnectionConfig() {
+  try {
+    const saved = localStorage.getItem('vedadb_config');
+    if (saved) return JSON.parse(saved);
+  } catch { /* */ }
+  return { ...DEFAULT_CONFIG };
+}
 
 // --- Types ---
 
@@ -317,14 +344,33 @@ function seedData(db: DBState): void {
 // --- Client Factory ---
 
 export function createClient(config: { host?: string; port?: number } = {}): VedaClient {
-  const host = config.host || 'localhost';
-  const port = config.port || 6380;
+  const cfg = getConnectionConfig();
+  const host = config.host || cfg.host || 'localhost';
+  const port = config.port || cfg.port || 6380;
+
+  // Try real driver first (only works in Node.js/TCP environments)
+  let _realClient: any = null;
 
   const client: VedaClient = {
     _isConnected: false,
     _connectionInfo: { host, port, latency: 0 },
 
     async _connect() {
+      // Attempt real VedaDB connection
+      try {
+        const vedadb = await import('vedadb');
+        if (vedadb?.createClient) {
+          _realClient = vedadb.createClient({ host, port, timeout: 30000 });
+          await _realClient.connect();
+          client._isConnected = true;
+          client._connectionInfo.latency = Math.floor(Math.random() * 3) + 2;
+          return;
+        }
+      } catch {
+        /* real driver unavailable — fall back to localStorage mock */
+      }
+
+      // Browser mock fallback
       await delay(600);
       client._isConnected = true;
       client._connectionInfo.latency = Math.floor(Math.random() * 3) + 2;

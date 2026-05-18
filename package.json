@@ -59,6 +59,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
+    "vedadb": "file:../../../mnt/agents/vedadb-driver/node",
     "zod": "^4.4.3",
     "zustand": "^5.0.13"
   },

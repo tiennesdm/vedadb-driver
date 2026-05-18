@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { User, Category } from '@/hooks/useTickets';
+import { useIsAdmin, useIsManager, useCurrentRole } from '@/hooks/useRBAC';
 
 const STATUS_CONFIG: Record<string, { bg: string; iconColor: string; icon: React.ReactNode; label: string }> = {
   open: { bg: 'bg-[#f6ffed]', iconColor: 'text-[#52c41a]', icon: <CircleDot size={18} />, label: 'Open' },
@@ -77,6 +78,9 @@ export default function TicketDetail() {
   const navigate = useNavigate();
   const ticketId = Number(id);
   const currentUser = useAppStore((s) => s.currentUser);
+  const isAdmin = useIsAdmin();
+  const isManager = useIsManager();
+  const currentRole = useCurrentRole();
   const [users, setUsers] = useState<User[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [copied, setCopied] = useState(false);
@@ -101,6 +105,12 @@ export default function TicketDetail() {
     changeStatus,
     reassign,
   } = useTicketDetail(ticketId || null);
+
+  // RBAC derived state
+  const canDelete = isAdmin;
+  const canEdit = isAdmin || isManager || (currentRole === 'agent' && ticket?.assigned_to === currentUser?.id);
+  const canReassign = isAdmin || isManager;
+  const canChangeStatus = isAdmin || isManager || (currentRole === 'agent' && ticket?.assigned_to === currentUser?.id) || ticket?.created_by === currentUser?.id;
 
   const query = useAppStore((s) => s.query);
 
@@ -235,35 +245,45 @@ export default function TicketDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-[#e5e0d5] bg-[#f5f0e8] px-3 py-2 text-sm text-[#1f1f1f] transition-colors hover:bg-[#ede7db]"
-            >
-              <Pencil size={14} />
-              <span className="hidden sm:inline">Edit</span>
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="rounded-lg p-2 text-[#595959] transition-colors hover:bg-[#f5f0e8]">
-                  <MoreHorizontal size={18} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                  <Pencil size={14} className="mr-2" /> Edit Ticket
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange(ticket.status === 'open' ? 'closed' : 'open')}>
-                  <CheckCircle2 size={14} className="mr-2" />
-                  {ticket.status === 'open' ? 'Close Ticket' : 'Reopen Ticket'}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDeleteOpen(true)}
-                  className="text-[#f5222d] focus:text-[#f5222d]"
-                >
-                  <Trash2 size={14} className="mr-2" /> Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canEdit && (
+              <button
+                onClick={() => setEditOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#e5e0d5] bg-[#f5f0e8] px-3 py-2 text-sm text-[#1f1f1f] transition-colors hover:bg-[#ede7db]"
+              >
+                <Pencil size={14} />
+                <span className="hidden sm:inline">Edit</span>
+              </button>
+            )}
+            {(canEdit || canChangeStatus || canDelete) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="rounded-lg p-2 text-[#595959] transition-colors hover:bg-[#f5f0e8]">
+                    <MoreHorizontal size={18} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {canEdit && (
+                    <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                      <Pencil size={14} className="mr-2" /> Edit Ticket
+                    </DropdownMenuItem>
+                  )}
+                  {canChangeStatus && (
+                    <DropdownMenuItem onClick={() => handleStatusChange(ticket.status === 'open' ? 'closed' : 'open')}>
+                      <CheckCircle2 size={14} className="mr-2" />
+                      {ticket.status === 'open' ? 'Close Ticket' : 'Reopen Ticket'}
+                    </DropdownMenuItem>
+                  )}
+                  {canDelete && (
+                    <DropdownMenuItem
+                      onClick={() => setDeleteOpen(true)}
+                      className="text-[#f5222d] focus:text-[#f5222d]"
+                    >
+                      <Trash2 size={14} className="mr-2" /> Delete
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </div>
@@ -471,16 +491,22 @@ export default function TicketDetail() {
                 <div>
                   <label className="text-[10px] uppercase tracking-[0.1em] text-[#595959]">Assigned To</label>
                   <div className="mt-1">
-                    <select
-                      value={ticket.assigned_to || 'unassigned'}
-                      onChange={(e) => handleReassign(e.target.value)}
-                      className="h-9 w-full rounded-lg border border-[#e5e0d5] bg-white px-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#c9a87c]"
-                    >
-                      <option value="unassigned">Unassigned</option>
-                      {allUsers.map((u) => (
-                        <option key={u.id} value={String(u.id)}>{u.name}</option>
-                      ))}
-                    </select>
+                    {canReassign ? (
+                      <select
+                        value={ticket.assigned_to || 'unassigned'}
+                        onChange={(e) => handleReassign(e.target.value)}
+                        className="h-9 w-full rounded-lg border border-[#e5e0d5] bg-white px-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#c9a87c]"
+                      >
+                        <option value="unassigned">Unassigned</option>
+                        {allUsers.map((u) => (
+                          <option key={u.id} value={String(u.id)}>{u.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="block text-sm text-[#1f1f1f]">
+                        {ticket.assignee_name || 'Unassigned'}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -531,31 +557,33 @@ export default function TicketDetail() {
               </div>
 
               {/* Quick Status Change */}
-              <div className="mt-6 pt-4 border-t border-[#e5e0d5]">
-                <label className="mb-2 block text-[10px] uppercase tracking-[0.1em] text-[#595959]">
-                  Change Status
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(STATUS_CONFIG).map(([key, config]) => {
-                    const isActive = ticket.status === key;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => handleStatusChange(key)}
-                        title={config.label}
-                        className={cn(
-                          'flex h-9 w-9 items-center justify-center rounded-lg transition-all hover:scale-110',
-                          config.bg,
-                          config.iconColor,
-                          isActive && 'ring-2 ring-offset-1 ring-[#c9a87c]',
-                        )}
-                      >
-                        {config.icon}
-                      </button>
-                    );
-                  })}
+              {canChangeStatus && (
+                <div className="mt-6 pt-4 border-t border-[#e5e0d5]">
+                  <label className="mb-2 block text-[10px] uppercase tracking-[0.1em] text-[#595959]">
+                    Change Status
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(STATUS_CONFIG).map(([key, config]) => {
+                      const isActive = ticket.status === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => handleStatusChange(key)}
+                          title={config.label}
+                          className={cn(
+                            'flex h-9 w-9 items-center justify-center rounded-lg transition-all hover:scale-110',
+                            config.bg,
+                            config.iconColor,
+                            isActive && 'ring-2 ring-offset-1 ring-[#c9a87c]',
+                          )}
+                        >
+                          {config.icon}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

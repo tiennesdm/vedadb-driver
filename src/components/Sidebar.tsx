@@ -23,9 +23,9 @@ import {
   Timer,
 } from 'lucide-react';
 import useAppStore from '@/lib/vedadb-store';
-import { usePermission, useAnyPermission } from '@/hooks/useRBAC';
+import { usePermission, useAnyPermission, useRoleLevel } from '@/hooks/useRBAC';
 import RoleBadge from './RoleBadge';
-import { Permission } from '@/lib/rbac';
+import { Permission, Role } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -40,6 +40,7 @@ interface NavItem {
 }
 
 function useNavItems(): NavItem[] {
+  const canViewDashboard = useRoleLevel(Role.AGENT);
   const canViewUsers = usePermission(Permission.USER_VIEW);
   const canManageUsers = usePermission(Permission.USER_MANAGE);
   const canViewSLA = usePermission(Permission.SLA_VIEW);
@@ -55,13 +56,17 @@ function useNavItems(): NavItem[] {
   const canManageCatalog = usePermission(Permission.CATALOG_MANAGE);
   const canViewCSAT = usePermission(Permission.CSAT_VIEW);
   const canManageSettings = usePermission(Permission.SETTINGS_MANAGE);
+  const canViewTimeEntries = useAnyPermission([Permission.REPORT_VIEW_OWN, Permission.REPORT_VIEW_ALL]);
 
   return useMemo(() => {
     const items: NavItem[] = [
-      { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
       { icon: Ticket, label: 'Tickets', path: '/tickets' },
       { icon: BookOpen, label: 'Knowledge', path: '/knowledge' },
     ];
+
+    if (canViewDashboard) {
+      items.unshift({ icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' });
+    }
 
     if (canViewUsers || canManageUsers) {
       items.push({ icon: Users, label: 'Users', path: '/users' });
@@ -96,9 +101,12 @@ function useNavItems(): NavItem[] {
     if (canManageSettings) {
       items.push({ icon: Settings, label: 'Settings', path: '/settings' });
     }
-    items.push({ icon: Timer, label: 'Time Entries', path: '/time-entries' });
+    if (canViewTimeEntries) {
+      items.push({ icon: Timer, label: 'Time Entries', path: '/time-entries' });
+    }
     return items;
   }, [
+    canViewDashboard,
     canViewUsers,
     canManageUsers,
     canViewSLA,
@@ -111,6 +119,7 @@ function useNavItems(): NavItem[] {
     canManageCatalog,
     canViewCSAT,
     canManageSettings,
+    canViewTimeEntries,
   ]);
 }
 
