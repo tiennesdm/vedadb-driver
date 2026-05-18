@@ -11,6 +11,8 @@ import TicketFormModal from '@/components/tickets/TicketFormModal';
 import DeleteConfirmDialog from '@/components/tickets/DeleteConfirmDialog';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import MentionInput from '@/components/advanced/MentionInput';
+import InternalNoteToggle from '@/components/advanced/InternalNoteToggle';
 import {
   ArrowLeft,
   Copy,
@@ -194,6 +196,7 @@ export default function TicketDetail() {
   const [copied, setCopied] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [isInternalNote, setIsInternalNote] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
@@ -248,8 +251,13 @@ export default function TicketDetail() {
     if (!commentText.trim()) return;
     setCommentSubmitting(true);
     try {
-      await addComment(commentText.trim());
+      // Prefix internal notes with [INTERNAL] marker
+      const content = isInternalNote
+        ? `[INTERNAL] ${commentText.trim()}`
+        : commentText.trim();
+      await addComment(content);
       setCommentText('');
+      setIsInternalNote(false);
     } finally {
       setCommentSubmitting(false);
     }
@@ -518,70 +526,114 @@ export default function TicketDetail() {
               </div>
             ) : (
               <div className="space-y-4 mb-6">
-                {comments.map((comment, idx) => (
-                  <div
-                    key={comment.id}
-                    className="flex gap-3 animate-in fade-in slide-in-from-bottom-4"
-                    style={{ animationDelay: `${idx * 0.05}s`, animationFillMode: 'backwards' }}
-                  >
-                    {/* Avatar */}
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgba(201,168,124,0.2)] text-xs font-bold text-[#c9a87c]">
-                      {comment.author_name
-                        ? comment.author_name.split(' ').map((n) => n[0]).join('').toUpperCase()
-                        : '?'}
-                    </div>
-                    {/* Content */}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[#1f1f1f]">
-                          {comment.author_name || 'Unknown'}
-                        </span>
-                        <span className="font-mono text-xs text-[#8a8a8a]">
-                          {comment.created_at
-                            ? formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })
-                            : ''}
-                        </span>
+                {comments.map((comment, idx) => {
+                  const isInternal = comment.content?.startsWith('[INTERNAL]');
+                  const displayContent = isInternal
+                    ? comment.content.replace(/^\[INTERNAL\]\s?/, '')
+                    : comment.content;
+                  return (
+                    <div
+                      key={comment.id}
+                      className="flex gap-3 animate-in fade-in slide-in-from-bottom-4"
+                      style={{ animationDelay: `${idx * 0.05}s`, animationFillMode: 'backwards' }}
+                    >
+                      {/* Avatar */}
+                      <div className={cn(
+                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                        isInternal
+                          ? "bg-[#fff7e6] text-[#d48806]"
+                          : "bg-[rgba(201,168,124,0.2)] text-[#c9a87c]"
+                      )}>
+                        {comment.author_name
+                          ? comment.author_name.split(' ').map((n) => n[0]).join('').toUpperCase()
+                          : '?'}
                       </div>
-                      <div className="rounded-xl bg-[#fbf9f4] px-4 py-3 text-sm text-[#1f1f1f]">
-                        {comment.content}
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="text-sm font-semibold text-[#1f1f1f]">
+                            {comment.author_name || 'Unknown'}
+                          </span>
+                          {isInternal && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-[#fff7e6] px-2 py-0.5 text-[10px] font-medium text-[#d48806]">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                              Internal
+                            </span>
+                          )}
+                          <span className="font-mono text-xs text-[#8a8a8a]">
+                            {comment.created_at
+                              ? formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })
+                              : ''}
+                          </span>
+                        </div>
+                        <div className={cn(
+                          "rounded-xl px-4 py-3 text-sm text-[#1f1f1f]",
+                          isInternal
+                            ? "bg-[#fffbe6] border border-[#ffd666]"
+                            : "bg-[#fbf9f4]"
+                        )}>
+                          {displayContent}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* Add Comment */}
             <div className="border-t border-[#e5e0d5] pt-4">
+              {/* Toggle: Internal vs Public */}
+              <div className="mb-3 flex items-center justify-between">
+                <InternalNoteToggle
+                  isInternal={isInternalNote}
+                  onChange={setIsInternalNote}
+                />
+                {isInternalNote && (
+                  <span className="text-xs text-[#d48806]">
+                    Only agents and managers can see this
+                  </span>
+                )}
+              </div>
               <div className="flex gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgba(201,168,124,0.2)] text-xs font-bold text-[#c9a87c]">
+                <div className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                  isInternalNote
+                    ? "bg-[#fff7e6] text-[#d48806]"
+                    : "bg-[rgba(201,168,124,0.2)] text-[#c9a87c]"
+                )}>
                   {currentUser?.name?.split(' ').map((n) => n[0]).join('').toUpperCase() || '?'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <textarea
+                  <MentionInput
                     value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add a comment..."
+                    onChange={setCommentText}
+                    placeholder={isInternalNote ? "Add an internal note... Use @ to mention" : "Add a comment... Use @ to mention a team member"}
                     rows={3}
-                    className="w-full resize-none rounded-xl border border-[#e5e0d5] bg-[#fbf9f4] px-4 py-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#c9a87c] focus:ring-2 focus:ring-[rgba(201,168,124,0.15)]"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                        handleAddComment();
-                      }
-                    }}
+                    onSubmit={handleAddComment}
+                    disabled={commentSubmitting}
                   />
-                  <div className="mt-2 flex justify-end">
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-xs text-[#8a8a8a]">
+                      Press Ctrl+Enter to send
+                    </span>
                     <button
                       onClick={handleAddComment}
                       disabled={!commentText.trim() || commentSubmitting}
-                      className="flex items-center gap-1.5 rounded-lg bg-[#c9a87c] px-4 py-2 text-sm font-medium text-[#1f1f1f] transition-all hover:brightness-95 disabled:opacity-50"
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                        isInternalNote
+                          ? 'bg-[#fff7e6] text-[#d48806] border border-[#ffd666] hover:brightness-95'
+                          : 'bg-[#c9a87c] text-[#1f1f1f] hover:brightness-95',
+                        (!commentText.trim() || commentSubmitting) && 'opacity-50'
+                      )}
                     >
                       {commentSubmitting ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <Send size={14} />
                       )}
-                      Send
+                      {isInternalNote ? 'Add Note' : 'Send'}
                     </button>
                   </div>
                 </div>
