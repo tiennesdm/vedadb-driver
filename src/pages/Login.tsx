@@ -1,28 +1,50 @@
 /**
  * Login Page — Split-screen layout with Canvas 2D particle background
+ * Updated with VedaDB connection setup and seeded user login
  */
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  Globe,
+  KeyRound,
+  CheckCircle2,
+  XCircle,
+  Database,
+  ChevronDown,
+  LogIn,
+  Plug,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '@/lib/vedadb-store';
-import VedaDBStatus from '@/components/VedaDBStatus';
+import { vedaTestConnection, setApiBase, setApiKey as setVedaApiKey } from '@/lib/vedadb-api';
 import RoleBadge from '@/components/RoleBadge';
 import { Role } from '@/lib/rbac';
-
-const loginSchema = z.object({
-  email: z.string().min(1, 'Email is required').email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  rememberMe: z.boolean().optional(),
-});
-
-type LoginForm = z.infer<typeof loginSchema>;
+import { cn } from '@/lib/utils';
 
 /* ------------------------------------------------------------------ */
-/*  Particle Canvas — isolated in a dedicated component               */
+/*  Seeded users for demo                                              */
+/* ------------------------------------------------------------------ */
+
+const SEEDED_USERS = [
+  { email: 'sarah.chen@company.com', role: Role.SUPER_ADMIN, label: 'Sarah Chen', dept: 'IT Support' },
+  { email: 'marcus.j@company.com', role: Role.ADMIN, label: 'Marcus Johnson', dept: 'IT Support' },
+  { email: 'aisha.patel@company.com', role: Role.MANAGER, label: 'Aisha Patel', dept: 'HR' },
+  { email: 'david.kim@company.com', role: Role.AGENT, label: 'David Kim', dept: 'IT Support' },
+  { email: 'emily.r@company.com', role: Role.CUSTOMER, label: 'Emily Rodriguez', dept: 'Sales' },
+  { email: 'james.w@company.com', role: Role.AGENT, label: 'James Wilson', dept: 'IT Support' },
+  { email: 'olivia.m@company.com', role: Role.MANAGER, label: 'Olivia Martinez', dept: 'Finance' },
+  { email: 'noah.g@company.com', role: Role.ADMIN, label: 'Noah Garcia', dept: 'HR' },
+  { email: 'isabella.b@company.com', role: Role.AGENT, label: 'Isabella Brown', dept: 'Finance' },
+  { email: 'sophia.lee@company.com', role: Role.CUSTOMER, label: 'Sophia Lee', dept: 'Sales' },
+  { email: 'liam.t@company.com', role: Role.AGENT, label: 'Liam Thompson', dept: 'Facilities' },
+  { email: 'ethan.d@company.com', role: Role.CUSTOMER, label: 'Ethan Davis', dept: 'Facilities' },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Particle Canvas                                                    */
 /* ------------------------------------------------------------------ */
 const ParticleCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -87,20 +109,16 @@ const ParticleCanvas = () => {
     function animate() {
       ctx!.clearRect(0, 0, w, h);
 
-      // Update & draw particles
       for (const p of particles) {
         p.phase += 0.005 * p.speed;
         p.baseX += p.speed * 0.3;
 
-        // Wrap around horizontally
         if (p.baseX > w + 10) p.baseX = -10;
 
-        // Sine wave motion
         const sineOffset = Math.sin(p.phase + p.angle) * 20;
         p.x = p.baseX;
         p.y = p.baseY + sineOffset;
 
-        // Mouse repel
         const dx = p.x - mouse.x;
         const dy = p.y - mouse.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -110,14 +128,12 @@ const ParticleCanvas = () => {
           p.y += (dy / dist) * force * 5;
         }
 
-        // Draw particle
         ctx!.beginPath();
         ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx!.fillStyle = `rgba(201, 168, 124, ${0.3 + p.size * 0.15})`;
         ctx!.fill();
       }
 
-      // Connection lines
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -172,70 +188,60 @@ const ParticleCanvas = () => {
 };
 
 /* ------------------------------------------------------------------ */
-/*  Quick Login Button                                                 */
-/* ------------------------------------------------------------------ */
-function QuickLoginButton({
-  email,
-  role,
-  label,
-}: {
-  email: string;
-  role: Role;
-  label: string;
-}) {
-  const navigate = useNavigate();
-  const login = useAppStore((s) => s.login);
-
-  const handleClick = async () => {
-    const success = await login(email, 'password');
-    if (success) {
-      navigate('/dashboard');
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="flex items-center gap-1.5 rounded-md border border-[#e5e0d5] bg-white px-2.5 py-1.5 text-xs transition-all hover:border-[#c9a87c] hover:shadow-sm"
-    >
-      <RoleBadge role={role} />
-      <span className="text-[#595959]">{label}</span>
-    </button>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Login Page                                                         */
 /* ------------------------------------------------------------------ */
+
 export default function Login() {
   const navigate = useNavigate();
   const login = useAppStore((s) => s.login);
   const initDB = useAppStore((s) => s.initDB);
 
+  // Connection
+  const [apiUrl, setApiUrl] = useState(() => {
+    try { return localStorage.getItem('vedadb_api_url') || 'http://localhost:9090'; }
+    catch { return 'http://localhost:9090'; }
+  });
+  const [apiKey, setApiKey] = useState(() => {
+    try { return localStorage.getItem('vedadb_api_key') || ''; }
+    catch { return ''; }
+  });
+  const [connectionState, setConnectionState] = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
+
+  // Login form
+  const [selectedEmail, setSelectedEmail] = useState('');
+  const [password, setPassword] = useState('password');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { rememberMe: false },
-  });
+  const inputClasses =
+    'h-10 w-full rounded-lg border border-[#e5e0d5] bg-white px-4 text-sm text-[#1f1f1f] outline-none transition-all placeholder:text-[#8a8a8a] focus:border-[#c9a87c] focus:shadow-[0_0_0_3px_rgba(201,168,124,0.15)]';
 
-  // Init DB on mount
   useEffect(() => {
     initDB();
   }, [initDB]);
 
-  const onSubmit = async (data: LoginForm) => {
+  const handleTestConnection = async () => {
+    setConnectionState('testing');
+    setApiBase(apiUrl);
+    setVedaApiKey(apiKey);
+    try {
+      const ok = await vedaTestConnection();
+      if (ok) {
+        setConnectionState('connected');
+      } else {
+        setConnectionState('failed');
+      }
+    } catch {
+      setConnectionState('failed');
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!selectedEmail) return;
     setLoading(true);
-    // Simulate brief network delay
-    await new Promise((r) => setTimeout(r, 800));
-    const success = await login(data.email, data.password);
+    await new Promise((r) => setTimeout(r, 600));
+    const success = await login(selectedEmail, password);
     setLoading(false);
 
     if (success) {
@@ -246,9 +252,7 @@ export default function Login() {
     }
   };
 
-  const inputClasses =
-    'h-10 w-full rounded-lg border border-[#e5e0d5] bg-white px-4 text-sm text-[#1f1f1f] outline-none transition-all placeholder:text-[#8a8a8a] focus:border-[#c9a87c] focus:shadow-[0_0_0_3px_rgba(201,168,124,0.15)]';
-  const errorClasses = 'mt-1 text-xs text-[#f5222d]';
+  const isConnectionReady = connectionState === 'connected';
 
   return (
     <div className="flex min-h-[100dvh]">
@@ -257,15 +261,15 @@ export default function Login() {
         initial={{ x: -30, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number, number, number, number], delay: 0.3 }}
-        className="flex w-full flex-col justify-center bg-white px-6 md:w-1/2 md:px-12 lg:px-20 xl:w-[480px] xl:px-16"
+        className="flex w-full flex-col justify-center bg-white px-6 md:w-1/2 md:px-12 lg:px-20 xl:w-[520px] xl:px-16 overflow-y-auto"
       >
-        <div className="mx-auto w-full max-w-sm">
+        <div className="mx-auto w-full max-w-sm py-8">
           {/* Logo */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5, duration: 0.3 }}
-            className="mb-10 flex items-center gap-2"
+            className="mb-8 flex items-center gap-2"
           >
             <img src="./logo-icon.svg" alt="VedaDesk" className="h-10 w-10" />
             <img src="./logo-wordmark.svg" alt="VedaDesk" className="h-7" />
@@ -276,7 +280,7 @@ export default function Login() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6, duration: 0.4 }}
-            className="mb-8"
+            className="mb-6"
           >
             <h2 className="font-playfair text-2xl font-bold text-[#1f1f1f] md:text-3xl">
               Welcome back
@@ -286,126 +290,206 @@ export default function Login() {
             </p>
           </motion.div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            {/* Email */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7, duration: 0.4 }}
-            >
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
-                Email address
-              </label>
-              <input
-                type="email"
-                placeholder="agent@company.com"
-                className={inputClasses}
-                {...register('email')}
-              />
-              {errors.email && <p className={errorClasses}>{errors.email.message}</p>}
-            </motion.div>
-
-            {/* Password */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8, duration: 0.4 }}
-            >
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  className={inputClasses + ' pr-10'}
-                  {...register('password')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8a8a8a] transition-colors hover:text-[#595959]"
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              {errors.password && <p className={errorClasses}>{errors.password.message}</p>}
-            </motion.div>
-
-            {/* Remember me */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9, duration: 0.4 }}
-              className="flex items-center gap-2"
-            >
-              <input
-                type="checkbox"
-                id="remember"
-                className="h-[18px] w-[18px] rounded border-[#e5e0d5] accent-[#c9a87c]"
-                {...register('rememberMe')}
-              />
-              <label htmlFor="remember" className="text-sm text-[#595959]">
-                Remember me for 30 days
-              </label>
-            </motion.div>
-
-            {/* Submit button */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: shake ? [1, 0.95, 1.02, 0.98, 1] : 1 }}
-              transition={{
-                opacity: { delay: 1.0, duration: 0.3 },
-                scale: shake
-                  ? { duration: 0.5 }
-                  : { delay: 1.0, duration: 0.3, ease: [0.34, 1.56, 0.64, 1] as [number, number, number, number] },
-              }}
-            >
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex h-12 w-full items-center justify-center rounded-lg bg-[#c9a87c] text-sm font-bold text-[#1f1f1f] transition-all hover:scale-[1.02] hover:brightness-90 active:scale-[0.98] disabled:opacity-80 md:h-12"
-              >
-                {loading ? (
-                  <Loader2 size={20} className="animate-spin" />
-                ) : (
-                  'Sign In'
-                )}
-              </button>
-              {shake && (
-                <p className="mt-2 text-center text-xs text-[#f5222d]">
-                  Invalid email or password. Try any user email from the database.
-                </p>
-              )}
-            </motion.div>
-          </form>
-
-          {/* Quick login buttons */}
+          {/* Connection Setup */}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.2, duration: 0.4 }}
-            className="mt-6 rounded-lg bg-[#f5f0e8] p-3"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.65, duration: 0.4 }}
+            className="mb-5 rounded-xl border border-[#e5e0d5] bg-[#fbf9f4] p-4"
           >
-            <p className="text-xs font-medium text-[#1f1f1f]">Quick login (demo):</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <QuickLoginButton email="sarah.chen@company.com" role={Role.SUPER_ADMIN} label="Super Admin" />
-              <QuickLoginButton email="marcus.j@company.com" role={Role.ADMIN} label="Admin" />
-              <QuickLoginButton email="aisha.patel@company.com" role={Role.MANAGER} label="Manager" />
-              <QuickLoginButton email="david.kim@company.com" role={Role.AGENT} label="Agent" />
-              <QuickLoginButton email="emily.r@company.com" role={Role.CUSTOMER} label="Customer" />
+            <h3 className="mb-3 text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
+              VedaDB Connection
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-[#595959]">API URL</label>
+                <div className="relative">
+                  <Globe size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
+                  <input
+                    type="text"
+                    value={apiUrl}
+                    onChange={(e) => setApiUrl(e.target.value)}
+                    placeholder="http://localhost:9090"
+                    className={inputClasses + ' pl-9'}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-[#595959]">API Key (optional)</label>
+                <div className="relative">
+                  <KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Optional"
+                    className={inputClasses + ' pl-9'}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleTestConnection}
+                  disabled={connectionState === 'testing'}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all',
+                    connectionState === 'idle' && 'bg-[#c9a87c] text-[#1f1f1f] hover:brightness-95',
+                    connectionState === 'testing' && 'bg-[#e5e0d5] text-[#8a8a8a] cursor-not-allowed',
+                    connectionState === 'connected' && 'bg-[#52c41a] text-white',
+                    connectionState === 'failed' && 'bg-[#f5222d] text-white',
+                  )}
+                >
+                  {connectionState === 'idle' && <Plug size={14} />}
+                  {connectionState === 'testing' && <Loader2 size={14} className="animate-spin" />}
+                  {connectionState === 'connected' && <CheckCircle2 size={14} />}
+                  {connectionState === 'failed' && <XCircle size={14} />}
+                  {connectionState === 'idle' && 'Test Connection'}
+                  {connectionState === 'testing' && 'Testing...'}
+                  {connectionState === 'connected' && 'Connected'}
+                  {connectionState === 'failed' && 'Failed'}
+                </button>
+
+                {connectionState === 'connected' && (
+                  <span className="text-xs text-[#52c41a]">VedaDB is ready</span>
+                )}
+                {connectionState === 'failed' && (
+                  <span className="text-xs text-[#f5222d]">
+                    <button
+                      onClick={() => navigate('/db-setup')}
+                      className="underline hover:no-underline"
+                    >
+                      Setup Database
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
           </motion.div>
 
-          {/* VedaDB Connection Status */}
+          {/* Login Form - Only show after connection */}
+          {isConnectionReady && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="space-y-4"
+            >
+              {/* Email dropdown */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
+                  Select User
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedEmail}
+                    onChange={(e) => setSelectedEmail(e.target.value)}
+                    className={inputClasses + ' appearance-none pr-10'}
+                  >
+                    <option value="">Choose a user...</option>
+                    {SEEDED_USERS.map((u) => (
+                      <option key={u.email} value={u.email}>
+                        {u.label} ({u.dept})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className={inputClasses + ' pr-10'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8a8a8a] transition-colors hover:text-[#595959]"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Login Button */}
+              <motion.div
+                animate={{ scale: shake ? [1, 0.95, 1.02, 0.98, 1] : 1 }}
+                transition={{ duration: 0.5 }}
+              >
+                <button
+                  onClick={handleLogin}
+                  disabled={loading || !selectedEmail}
+                  className={cn(
+                    'flex h-12 w-full items-center justify-center gap-2 rounded-lg text-sm font-bold transition-all',
+                    selectedEmail
+                      ? 'bg-[#c9a87c] text-[#1f1f1f] hover:scale-[1.02] hover:brightness-90 active:scale-[0.98]'
+                      : 'cursor-not-allowed bg-[#e5e0d5] text-[#8a8a8a]',
+                  )}
+                >
+                  {loading ? (
+                    <Loader2 size={20} className="animate-spin" />
+                  ) : (
+                    <>
+                      <LogIn size={18} />
+                      Sign In
+                    </>
+                  )}
+                </button>
+                {shake && (
+                  <p className="mt-2 text-center text-xs text-[#f5222d]">
+                    Login failed. Make sure the database is set up with seeded users.
+                  </p>
+                )}
+              </motion.div>
+
+              {/* Quick login buttons */}
+              <div className="mt-4 rounded-lg bg-[#f5f0e8] p-3">
+                <p className="mb-2 text-xs font-medium text-[#1f1f1f]">Quick login:</p>
+                <div className="flex flex-wrap gap-2">
+                  {SEEDED_USERS.slice(0, 5).map((u) => (
+                    <button
+                      key={u.email}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmail(u.email);
+                        setTimeout(() => handleLogin(), 100);
+                      }}
+                      className="flex items-center gap-1.5 rounded-md border border-[#e5e0d5] bg-white px-2.5 py-1.5 text-xs transition-all hover:border-[#c9a87c] hover:shadow-sm"
+                    >
+                      <RoleBadge role={u.role} />
+                      <span className="text-[#595959]">{u.label.split(' ')[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Setup DB link */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 1.1, duration: 0.3 }}
-            className="mt-8 flex items-center justify-center"
+            transition={{ delay: 0.8, duration: 0.4 }}
+            className="mt-6 text-center"
           >
-            <VedaDBStatus />
+            <button
+              onClick={() => navigate('/db-setup')}
+              className="inline-flex items-center gap-1.5 text-xs text-[#595959] transition-colors hover:text-[#c9a87c]"
+            >
+              <Database size={14} />
+              Setup Database
+            </button>
+            <p className="mt-1 text-[11px] text-[#8a8a8a]">
+              Create tables and seed demo data
+            </p>
           </motion.div>
         </div>
       </motion.div>
@@ -417,7 +501,6 @@ export default function Login() {
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
         className="relative hidden flex-1 overflow-hidden bg-[#0f0f0f] md:block"
       >
-        {/* Hero gradient overlay */}
         <div
           className="pointer-events-none absolute inset-0 z-[2]"
           style={{
@@ -426,7 +509,6 @@ export default function Login() {
           }}
         />
 
-        {/* Illustration overlay */}
         <img
           src="./login-illustration.jpg"
           alt=""
@@ -434,17 +516,14 @@ export default function Login() {
           style={{ maskImage: 'radial-gradient(ellipse 70% 60% at 50% 50%, black 30%, transparent 80%)' }}
         />
 
-        {/* Particle canvas */}
         <ParticleCanvas />
 
-        {/* Particle texture overlay */}
         <img
           src="./hero-particles.png"
           alt=""
           className="pointer-events-none absolute inset-0 z-[4] h-full w-full object-cover opacity-30"
         />
 
-        {/* Feature text */}
         <div className="absolute bottom-0 left-0 z-[5] p-8 lg:p-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

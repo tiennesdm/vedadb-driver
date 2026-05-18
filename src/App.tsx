@@ -10,6 +10,7 @@ import Users from '@/pages/Users';
 import KnowledgeBase from '@/pages/KnowledgeBase';
 import KnowledgeArticle from '@/pages/KnowledgeArticle';
 import Settings from '@/pages/Settings';
+import DBSetup from '@/pages/DBSetup';
 import { Role, Permission, hasAnyPermission, hasRoleLevel } from '@/lib/rbac';
 
 /* RBAC feature pages */
@@ -104,6 +105,8 @@ function AppRoutes() {
           isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />
         }
       />
+      {/* DB Setup — public route, no auth required */}
+      <Route path="/db-setup" element={<DBSetup />} />
       <Route path="/dashboard"     element={<ProtectedRoute routePath="/dashboard"><Dashboard /></ProtectedRoute>} />
       <Route path="/tickets"       element={<ProtectedRoute routePath="/tickets"><Tickets /></ProtectedRoute>} />
       <Route path="/tickets/:id"   element={<ProtectedRoute routePath="/tickets"><TicketDetail /></ProtectedRoute>} />

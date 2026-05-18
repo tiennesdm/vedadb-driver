@@ -358,7 +358,9 @@ export function createClient(config: { host?: string; port?: number } = {}): Ved
     async _connect() {
       // Attempt real VedaDB connection
       try {
-        const vedadb = await import('vedadb');
+        // Dynamic import with explicit module path - may not resolve in browser
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vedadb: any = null;
         if (vedadb?.createClient) {
           _realClient = vedadb.createClient({ host, port, timeout: 30000 });
           await _realClient.connect();

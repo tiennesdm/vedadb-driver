@@ -1,5 +1,5 @@
 /**
- * Knowledge Article Page — Full article view with content rendering, author info, feedback, and related articles
+ * Knowledge Article Page — Full article view with real API, author info, feedback, and related articles
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -22,8 +22,10 @@ import {
   Code,
   FileText,
   CreditCard,
+  Loader2,
 } from 'lucide-react';
 import useAppStore from '@/lib/vedadb-store';
+import { vedaQuery, toObjects } from '@/lib/vedadb-api';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -110,14 +112,12 @@ function renderMarkdown(content: string): React.ReactNode[] {
   };
 
   const parseInline = (text: string): React.ReactNode => {
-    // Bold **text**
     const boldParts = text.split(/(\*\*[\s\S]*?\*\*)/g);
     const result: React.ReactNode[] = [];
     boldParts.forEach((part, i) => {
       if (part.startsWith('**') && part.endsWith('**')) {
         result.push(<strong key={i} className="font-semibold text-[#1f1f1f]">{part.slice(2, -2)}</strong>);
       } else {
-        // Inline code `code`
         const codeParts = part.split(/(`[^`]+`)/g);
         codeParts.forEach((cp, j) => {
           if (cp.startsWith('`') && cp.endsWith('`')) {
@@ -127,7 +127,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
               </code>
             );
           } else {
-            // Links [text](url)
             const linkParts = cp.split(/(\[[^\]]+\]\([^)]+\))/g);
             linkParts.forEach((lp, k) => {
               const linkMatch = lp.match(/\[([^\]]+)\]\(([^)]+)\)/);
@@ -157,7 +156,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
   for (let idx = 0; idx < lines.length; idx++) {
     const line = lines[idx];
 
-    // Code block
     if (line.startsWith('```')) {
       if (!inCodeBlock) {
         flushList();
@@ -173,13 +171,11 @@ function renderMarkdown(content: string): React.ReactNode[] {
       continue;
     }
 
-    // Empty line
     if (line.trim() === '') {
       flushList();
       continue;
     }
 
-    // Headers
     if (line.startsWith('# ')) {
       flushList();
       elements.push(
@@ -208,7 +204,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
       continue;
     }
 
-    // Checkboxes / list items
     if (line.startsWith('- [') && line.includes('] ')) {
       const itemText = line.slice(line.indexOf('] ') + 2);
       listItems.push(itemText);
@@ -226,7 +221,6 @@ function renderMarkdown(content: string): React.ReactNode[] {
       continue;
     }
 
-    // Regular paragraph
     flushList();
     elements.push(
       <p key={key++} className="mb-4 text-base leading-relaxed text-[#1f1f1f]">
@@ -269,62 +263,48 @@ function readingTime(content: string): number {
 export default function KnowledgeArticle() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const query = useAppStore((s) => s.query);
-  const update = useAppStore((s) => s.update);
-  const deleteFrom = useAppStore((s) => s.deleteFrom);
+  const fetchArticleById = useAppStore((s) => s.fetchArticleById);
+  const deleteArticle = useAppStore((s) => s.deleteArticle);
   const currentUser = useAppStore((s) => s.currentUser);
 
   const [article, setArticle] = useState<ArticleRecord | null>(null);
   const [related, setRelated] = useState<RelatedArticle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewIncremented, setViewIncremented] = useState(false);
   const [feedback, setFeedback] = useState<'helpful' | 'not_helpful' | null>(null);
   const [shareTooltip, setShareTooltip] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const isAdminOrAgent = currentUser?.role === 'admin' || currentUser?.role === 'agent';
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdminOrAgent = currentUser?.role === 'admin' || currentUser?.role === 'agent' || currentUser?.role === 'super_admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
 
-  /* Fetch article */
+  /* Fetch article via real API */
   const fetchArticle = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const result = await query(`
-        SELECT a.*, u.name as author_name, u.avatar as author_avatar, u.role as author_role
-        FROM knowledge_articles a
-        LEFT JOIN users u ON a.author_id = u.id
-        WHERE a.id = ${id}
-      `);
-      const obj = result.first() as unknown as ArticleRecord | null;
-      if (obj) {
-        setArticle(obj);
+      const articleId = Number(id);
+      const result = await fetchArticleById(articleId);
+      if (result) {
+        setArticle(result as unknown as ArticleRecord);
 
-        // Fetch related articles
-        const relatedResult = await query(`
-          SELECT id, title, category, views
-          FROM knowledge_articles
-          WHERE category = '${obj.category}' AND id != ${obj.id}
-          ORDER BY views DESC
-          LIMIT 4
-        `);
-        setRelated(relatedResult.toObjects() as unknown as RelatedArticle[]);
-
-        // Increment views
-        if (!viewIncremented) {
-          await update('knowledge_articles', { views: (obj.views || 0) + 1 }, { id: obj.id });
-          setViewIncremented(true);
-          setArticle({ ...obj, views: (obj.views || 0) + 1 });
+        // Fetch related articles (same category) via real API
+        try {
+          const relatedResult = await vedaQuery(
+            `SELECT id, title, category, views FROM knowledge_articles WHERE category = '${result.category}' AND id != ${articleId} ORDER BY views DESC LIMIT 4`
+          );
+          setRelated(toObjects(relatedResult) as unknown as RelatedArticle[]);
+        } catch {
+          setRelated([]);
         }
       }
     } catch {
       // ignore
     }
     setLoading(false);
-  }, [id, query, update, viewIncremented]);
+  }, [id, fetchArticleById]);
 
   useEffect(() => {
-    setViewIncremented(false);
+    setFeedback(null);
     fetchArticle();
   }, [fetchArticle]);
 
@@ -336,7 +316,6 @@ export default function KnowledgeArticle() {
       setShareTooltip(true);
       setTimeout(() => setShareTooltip(false), 2000);
     } catch {
-      // fallback
       const input = document.createElement('input');
       input.value = url;
       document.body.appendChild(input);
@@ -350,7 +329,7 @@ export default function KnowledgeArticle() {
 
   const handleDelete = async () => {
     if (!article) return;
-    await deleteFrom('knowledge_articles', { id: article.id });
+    await deleteArticle(article.id);
     setDeleteDialogOpen(false);
     navigate('/knowledge');
   };
@@ -368,15 +347,8 @@ export default function KnowledgeArticle() {
 
   if (loading) {
     return (
-      <div className="animate-pulse">
-        <div className="mb-4 h-4 w-32 rounded bg-[#f5f0e8]" />
-        <div className="mb-3 h-8 w-3/4 rounded bg-[#f5f0e8]" />
-        <div className="mb-6 h-4 w-48 rounded bg-[#f5f0e8]" />
-        <div className="space-y-3">
-          <div className="h-4 w-full rounded bg-[#f5f0e8]" />
-          <div className="h-4 w-full rounded bg-[#f5f0e8]" />
-          <div className="h-4 w-2/3 rounded bg-[#f5f0e8]" />
-        </div>
+      <div className="flex h-96 items-center justify-center">
+        <Loader2 size={28} className="animate-spin text-[#c9a87c]" />
       </div>
     );
   }
@@ -489,6 +461,17 @@ export default function KnowledgeArticle() {
           <h1 className="mt-4 font-[Playfair_Display] text-3xl font-bold leading-tight text-[#1f1f1f] md:text-4xl">
             {article.title}
           </h1>
+
+          {/* Author */}
+          <div className="mt-4 flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(201,168,124,0.2)] text-xs font-bold text-[#c9a87c]">
+              {getInitials(article.author_name || 'A')}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[#1f1f1f]">{article.author_name || 'Unknown'}</p>
+              <p className="text-xs capitalize text-[#8a8a8a]">{article.author_role || 'Agent'}</p>
+            </div>
+          </div>
 
           {/* Tags */}
           {tags.length > 0 && (

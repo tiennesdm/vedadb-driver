@@ -143,7 +143,7 @@ export default function Tickets() {
 
     // Add activity
     const result = await query(`SELECT id FROM tickets ORDER BY id DESC LIMIT 1`);
-    const rows = result.toObjects() as { id: number }[];
+    const rows = result.toObjects() as unknown as { id: number }[];
     const newId = rows[0]?.id;
     if (newId && currentUser) {
       await insert('activities', {

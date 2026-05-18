@@ -1,5 +1,5 @@
 /**
- * Ticket Detail Page — Full ticket view with comments, activity log, and sidebar
+ * Ticket Detail Page — Full ticket view with comments, activity log, sidebar, and reject functionality
  */
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -33,6 +33,8 @@ import {
   Clock,
   MessageSquare,
   Activity,
+  Ban,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -40,6 +42,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { User, Category } from '@/hooks/useTickets';
 import { useIsAdmin, useIsManager, useCurrentRole } from '@/hooks/useRBAC';
 
@@ -49,6 +58,7 @@ const STATUS_CONFIG: Record<string, { bg: string; iconColor: string; icon: React
   resolved: { bg: 'bg-[#f6ffed]', iconColor: 'text-[#52c41a]', icon: <CheckCircle2 size={18} />, label: 'Resolved' },
   closed: { bg: 'bg-[#f5f5f5]', iconColor: 'text-[#8a8a8a]', icon: <XCircle size={18} />, label: 'Closed' },
   on_hold: { bg: 'bg-[#fff7e6]', iconColor: 'text-[#faad14]', icon: <PauseCircle size={18} />, label: 'On Hold' },
+  rejected: { bg: 'bg-[#fff2e8]', iconColor: 'text-[#fa8c16]', icon: <Ban size={18} />, label: 'Rejected' },
 };
 
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -57,12 +67,14 @@ const ACTIVITY_COLORS: Record<string, string> = {
   assigned: '#722ed1',
   commented: '#c9a87c',
   deleted: '#f5222d',
+  rejected: '#fa8c16',
   'Ticket created': '#52c41a',
   'Ticket updated': '#1890ff',
   'Added a comment': '#c9a87c',
   'Reassigned': '#722ed1',
   'Status changed': '#1890ff',
   'Bulk status changed': '#1890ff',
+  'Ticket rejected': '#fa8c16',
   'default': '#8a8a8a',
 };
 
@@ -73,11 +85,107 @@ function getActivityColor(action: string): string {
   return '#8a8a8a';
 }
 
+/* ------------------------------------------------------------------ */
+/*  Reject Ticket Modal                                                */
+/* ------------------------------------------------------------------ */
+
+function RejectTicketModal({
+  open,
+  onClose,
+  onConfirm,
+  loading,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string, targetDeptId: number) => void;
+  loading: boolean;
+}) {
+  const [reason, setReason] = useState('');
+  const [targetDept, setTargetDept] = useState('1');
+  const departments = useAppStore((s) => s.departments);
+
+  return (
+    <Dialog open={open} onOpenChange={() => !loading && onClose()}>
+      <DialogContent className="max-w-[440px] border-[#e5e0d5] bg-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg text-[#1f1f1f]">
+            <Ban size={20} className="text-[#fa8c16]" />
+            Reject Ticket
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-[#595959]">
+          Rejecting this ticket will transfer it to another department. Please provide a reason.
+        </p>
+
+        <div className="space-y-4 py-2">
+          {/* Reason */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
+              Rejection Reason
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Explain why this ticket is being rejected / transferred..."
+              rows={3}
+              className="w-full resize-none rounded-xl border border-[#e5e0d5] bg-[#fbf9f4] px-4 py-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#c9a87c] focus:ring-2 focus:ring-[rgba(201,168,124,0.15)]"
+            />
+          </div>
+
+          {/* Target Department */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.1em] text-[#595959]">
+              Transfer to Department
+            </label>
+            <select
+              value={targetDept}
+              onChange={(e) => setTargetDept(e.target.value)}
+              className="h-10 w-full rounded-lg border border-[#e5e0d5] bg-white px-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#c9a87c]"
+            >
+              {departments.map((d) => (
+                <option key={d.id} value={String(d.id)}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <DialogFooter className="mt-2">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-lg border border-[#e5e0d5] bg-white px-4 py-2.5 text-sm font-medium text-[#595959] transition-all hover:bg-[#f5f0e8] disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(reason, Number(targetDept))}
+            disabled={!reason.trim() || loading}
+            className={cn(
+              'flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all',
+              reason.trim()
+                ? 'bg-[#fa8c16] text-white hover:brightness-95'
+                : 'cursor-not-allowed bg-[#e5e0d5] text-[#8a8a8a]',
+            )}
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
+            Reject & Transfer
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main Component                                                     */
+/* ------------------------------------------------------------------ */
+
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const ticketId = Number(id);
   const currentUser = useAppStore((s) => s.currentUser);
+  const rejectTicket = useAppStore((s) => s.rejectTicket);
   const isAdmin = useIsAdmin();
   const isManager = useIsManager();
   const currentRole = useCurrentRole();
@@ -92,6 +200,8 @@ export default function TicketDetail() {
   // Modals
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   const {
     ticket,
@@ -111,6 +221,7 @@ export default function TicketDetail() {
   const canEdit = isAdmin || isManager || (currentRole === 'agent' && ticket?.assigned_to === currentUser?.id);
   const canReassign = isAdmin || isManager;
   const canChangeStatus = isAdmin || isManager || (currentRole === 'agent' && ticket?.assigned_to === currentUser?.id) || ticket?.created_by === currentUser?.id;
+  const canReject = isAdmin || isManager || (currentRole === 'agent' && ticket?.assigned_to === currentUser?.id);
 
   const query = useAppStore((s) => s.query);
 
@@ -159,6 +270,21 @@ export default function TicketDetail() {
   const handleDelete = async () => {
     await deleteTicket(ticketId);
     navigate('/tickets');
+  };
+
+  const handleReject = async (reason: string, targetDeptId: number) => {
+    setRejectLoading(true);
+    try {
+      await rejectTicket(ticketId, reason, targetDeptId);
+      setRejectOpen(false);
+      setStatusNotification(`Ticket rejected and transferred`);
+      setTimeout(() => setStatusNotification(null), 5000);
+      refresh();
+    } catch {
+      // error handled by store
+    } finally {
+      setRejectLoading(false);
+    }
   };
 
   const handleUpdate = async (data: {
@@ -218,6 +344,7 @@ export default function TicketDetail() {
 
   const creatorName = (ticket as unknown as Record<string, string>).creator_name || 'Unknown';
   const allUsers = users.length > 0 ? users : detailUsers;
+  const isRejected = ticket.status === 'rejected';
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -245,6 +372,16 @@ export default function TicketDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Reject Ticket Button */}
+            {canReject && !isRejected && (
+              <button
+                onClick={() => setRejectOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#fa8c16] bg-[#fff2e8] px-3 py-2 text-sm text-[#fa8c16] transition-colors hover:bg-[#fa8c16] hover:text-white"
+              >
+                <Ban size={14} />
+                <span className="hidden sm:inline">Reject</span>
+              </button>
+            )}
             {canEdit && (
               <button
                 onClick={() => setEditOpen(true)}
@@ -254,7 +391,7 @@ export default function TicketDetail() {
                 <span className="hidden sm:inline">Edit</span>
               </button>
             )}
-            {(canEdit || canChangeStatus || canDelete) && (
+            {(canEdit || canChangeStatus || canDelete || canReject) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="rounded-lg p-2 text-[#595959] transition-colors hover:bg-[#f5f0e8]">
@@ -265,6 +402,11 @@ export default function TicketDetail() {
                   {canEdit && (
                     <DropdownMenuItem onClick={() => setEditOpen(true)}>
                       <Pencil size={14} className="mr-2" /> Edit Ticket
+                    </DropdownMenuItem>
+                  )}
+                  {canReject && !isRejected && (
+                    <DropdownMenuItem onClick={() => setRejectOpen(true)} className="text-[#fa8c16] focus:text-[#fa8c16]">
+                      <Ban size={14} className="mr-2" /> Reject Ticket
                     </DropdownMenuItem>
                   )}
                   {canChangeStatus && (
@@ -295,6 +437,19 @@ export default function TicketDetail() {
         </div>
       )}
 
+      {/* Rejection Banner */}
+      {isRejected && (ticket as unknown as Record<string, string>).rejection_reason && (
+        <div className="mb-4 rounded-lg border border-[#fa8c16] bg-[#fff2e8] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} className="text-[#fa8c16]" />
+            <span className="text-sm font-medium text-[#fa8c16]">This ticket has been rejected</span>
+          </div>
+          <p className="mt-1 text-sm text-[#595959]">
+            Reason: {(ticket as unknown as Record<string, string>).rejection_reason}
+          </p>
+        </div>
+      )}
+
       {/* Main Layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left Column (2/3) */}
@@ -305,6 +460,11 @@ export default function TicketDetail() {
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <StatusBadge status={ticket.status} className="text-sm px-3 py-1" />
               <PriorityBadge priority={ticket.priority} className="text-sm" />
+              {ticket.ticket_type && (
+                <span className="rounded-md bg-[#f5f0e8] px-2 py-0.5 text-xs font-medium text-[#595959] capitalize">
+                  {ticket.ticket_type.replace('_', ' ')}
+                </span>
+              )}
             </div>
 
             {/* Title */}
@@ -325,6 +485,21 @@ export default function TicketDetail() {
                 <p className="text-sm italic text-[#8a8a8a]">No description provided.</p>
               )}
             </div>
+
+            {/* Rejection Reason - inline */}
+            {isRejected && (ticket as unknown as Record<string, string>).rejection_reason && (
+              <div className="mt-4 rounded-lg bg-[#fff2e8] border border-[#fa8c16] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Ban size={14} className="text-[#fa8c16]" />
+                  <span className="text-xs font-medium uppercase tracking-[0.1em] text-[#fa8c16]">
+                    Rejection Reason
+                  </span>
+                </div>
+                <p className="text-sm text-[#1f1f1f]">
+                  {(ticket as unknown as Record<string, string>).rejection_reason}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Comments Section */}
@@ -491,7 +666,7 @@ export default function TicketDetail() {
                 <div>
                   <label className="text-[10px] uppercase tracking-[0.1em] text-[#595959]">Assigned To</label>
                   <div className="mt-1">
-                    {canReassign ? (
+                    {canReassign && !isRejected ? (
                       <select
                         value={ticket.assigned_to || 'unassigned'}
                         onChange={(e) => handleReassign(e.target.value)}
@@ -557,7 +732,7 @@ export default function TicketDetail() {
               </div>
 
               {/* Quick Status Change */}
-              {canChangeStatus && (
+              {canChangeStatus && !isRejected && (
                 <div className="mt-6 pt-4 border-t border-[#e5e0d5]">
                   <label className="mb-2 block text-[10px] uppercase tracking-[0.1em] text-[#595959]">
                     Change Status
@@ -584,6 +759,19 @@ export default function TicketDetail() {
                   </div>
                 </div>
               )}
+
+              {/* Reject Button in sidebar */}
+              {canReject && !isRejected && (
+                <div className="mt-4 pt-4 border-t border-[#e5e0d5]">
+                  <button
+                    onClick={() => setRejectOpen(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#fa8c16] bg-[#fff2e8] px-3 py-2 text-sm font-medium text-[#fa8c16] transition-all hover:bg-[#fa8c16] hover:text-white"
+                  >
+                    <Ban size={14} />
+                    Reject & Transfer
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -605,6 +793,14 @@ export default function TicketDetail() {
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         ticketId={ticketId}
+      />
+
+      {/* Reject Modal */}
+      <RejectTicketModal
+        open={rejectOpen}
+        onClose={() => setRejectOpen(false)}
+        onConfirm={handleReject}
+        loading={rejectLoading}
       />
     </div>
   );

@@ -8,13 +8,18 @@ export interface Ticket {
   id: number;
   title: string;
   description: string;
-  status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'on_hold';
+  status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'on_hold' | 'rejected';
   priority: 'low' | 'medium' | 'high' | 'critical';
   category: string;
+  ticket_type?: string;
+  rejection_reason?: string;
+  department_id?: number;
   created_by: number | null;
   assigned_to: number | null;
   assignee_name?: string;
   assignee_avatar?: string;
+  creator_name?: string;
+  creator_avatar?: string;
   created_at: string;
   updated_at: string;
 }
@@ -162,7 +167,7 @@ export function useTicketsList() {
       let countSql = `SELECT COUNT(*) as total FROM tickets t`;
       if (conditions.length) countSql += ' WHERE ' + conditions.join(' AND ');
       const countResult = await query(countSql);
-      const count = (countResult.toObjects() as { total: number }[])[0]?.total || 0;
+      const count = Number((countResult.toObjects() as Record<string, string>[])[0]?.total || '0');
       setTotalCount(count);
 
       // Pagination
@@ -358,19 +363,10 @@ export function useTicketDetail(ticketId: number | null) {
   }, [update, insert, currentUser]);
 
   const deleteTicket = useCallback(async (id: number) => {
-    // Delete comments and activities first
-    const client = useAppStore.getState().client;
-    if (client) {
-      await client.transaction(async (trx) => {
-        await trx.deleteFrom('comments', { ticket_id: id });
-        await trx.deleteFrom('activities', { ticket_id: id });
-        await trx.deleteFrom('tickets', { id });
-      });
-    } else {
-      await deleteFrom('comments', { ticket_id: id });
-      await deleteFrom('activities', { ticket_id: id });
-      await deleteFrom('tickets', { id });
-    }
+    // Delete comments and activities first (sequential in HTTP mode)
+    await deleteFrom('comments', { ticket_id: id });
+    await deleteFrom('activities', { ticket_id: id });
+    await deleteFrom('tickets', { id });
   }, [deleteFrom]);
 
   const addComment = useCallback(async (content: string) => {

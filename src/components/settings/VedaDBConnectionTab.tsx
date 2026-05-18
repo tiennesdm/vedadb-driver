@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plug, CheckCircle, XCircle, Loader2, Timer, Info, Activity, Server } from 'lucide-react';
+import { Plug, CheckCircle, XCircle, Loader2, Timer, Activity, Server, Globe, KeyRound } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import useAppStore from '@/lib/vedadb-store';
+import {
+  setApiBase,
+  setApiKey,
+  getApiBase,
+  getApiKey,
+  vedaTestConnection,
+  getConnectionStatus,
+} from '@/lib/vedadb-api';
 
 interface Props {
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -18,25 +25,24 @@ interface ConnHistory {
 }
 
 export default function VedaDBConnectionTab({ showToast }: Props) {
-  const client = useAppStore((s) => s.client);
-  const dbStatus = useAppStore((s) => s.dbStatus);
-  const dbLatency = useAppStore((s) => s.dbLatency);
-
-  const [host, setHost] = useState('localhost');
-  const [port, setPort] = useState('6380');
-  const [token, setToken] = useState('');
+  const [apiUrl, setApiUrl] = useState('http://localhost:9090');
+  const [apiKey, setApiKeyState] = useState('');
   const [testState, setTestState] = useState<TestState>('idle');
   const [history, setHistory] = useState<ConnHistory[]>([]);
   const [lastConnected, setLastConnected] = useState<string | null>(null);
+  const [connStatus, setConnStatus] = useState(getConnectionStatus());
 
   useEffect(() => {
+    // Load saved settings from localStorage via vedadb-api
+    setApiUrl(getApiBase());
+    setApiKeyState(getApiKey());
+
     const saved = localStorage.getItem('vedadesk_conn_settings');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setHost(parsed.host || 'localhost');
-        setPort(parsed.port || '6380');
-        setToken(parsed.token || '');
+        if (parsed.apiUrl) setApiUrl(parsed.apiUrl);
+        if (parsed.apiKey) setApiKeyState(parsed.apiKey);
         setLastConnected(parsed.lastConnected || null);
       } catch { /* ignore */ }
     }
@@ -46,48 +52,67 @@ export default function VedaDBConnectionTab({ showToast }: Props) {
         setHistory(JSON.parse(savedHistory));
       } catch { /* ignore */ }
     }
+
+    // Update status periodically
+    const interval = setInterval(() => {
+      setConnStatus(getConnectionStatus());
+    }, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   const saveConfig = useCallback(() => {
-    const config = { host, port, token, lastConnected };
+    setApiBase(apiUrl);
+    setApiKey(apiKey);
+    const config = { apiUrl, apiKey, lastConnected };
     localStorage.setItem('vedadesk_conn_settings', JSON.stringify(config));
     showToast('Configuration saved', 'success');
-  }, [host, port, token, lastConnected, showToast]);
+  }, [apiUrl, apiKey, lastConnected, showToast]);
 
   const testConnection = useCallback(async () => {
     setTestState('testing');
-    await new Promise((r) => setTimeout(r, 1500));
+    // Apply current values before testing
+    setApiBase(apiUrl);
+    setApiKey(apiKey);
 
-    const success = !!client && dbStatus === 'connected';
-    if (success) {
-      setTestState('success');
-      const now = new Date().toISOString();
-      setLastConnected(now);
-      const entry: ConnHistory = {
-        time: now,
-        status: 'success',
-        message: `Connected to ${host}:${port} (${dbLatency}ms)`,
-      };
-      const newHistory = [entry, ...history].slice(0, 20);
-      setHistory(newHistory);
-      localStorage.setItem('vedadesk_conn_history', JSON.stringify(newHistory));
-      localStorage.setItem('vedadesk_conn_settings', JSON.stringify({ host, port, token, lastConnected: now }));
-      showToast('Connection successful!', 'success');
-      setTimeout(() => setTestState('idle'), 3000);
-    } else {
+    try {
+      const success = await vedaTestConnection();
+      const status = getConnectionStatus();
+      setConnStatus(status);
+
+      if (success) {
+        setTestState('success');
+        const now = new Date().toISOString();
+        setLastConnected(now);
+        const entry: ConnHistory = {
+          time: now,
+          status: 'success',
+          message: `Connected to ${apiUrl} (${status.latency}ms)`,
+        };
+        const newHistory = [entry, ...history].slice(0, 20);
+        setHistory(newHistory);
+        localStorage.setItem('vedadesk_conn_history', JSON.stringify(newHistory));
+        localStorage.setItem('vedadesk_conn_settings', JSON.stringify({ apiUrl, apiKey, lastConnected: now }));
+        showToast('Connection successful!', 'success');
+        setTimeout(() => setTestState('idle'), 3000);
+      } else {
+        setTestState('failed');
+        const entry: ConnHistory = {
+          time: new Date().toISOString(),
+          status: 'failed',
+          message: `Failed to connect to ${apiUrl}`,
+        };
+        const newHistory = [entry, ...history].slice(0, 20);
+        setHistory(newHistory);
+        localStorage.setItem('vedadesk_conn_history', JSON.stringify(newHistory));
+        showToast('Connection failed', 'error');
+        setTimeout(() => setTestState('idle'), 3000);
+      }
+    } catch {
       setTestState('failed');
-      const entry: ConnHistory = {
-        time: new Date().toISOString(),
-        status: 'failed',
-        message: `Failed to connect to ${host}:${port}`,
-      };
-      const newHistory = [entry, ...history].slice(0, 20);
-      setHistory(newHistory);
-      localStorage.setItem('vedadesk_conn_history', JSON.stringify(newHistory));
-      showToast('Connection failed', 'error');
+      showToast('Connection test error', 'error');
       setTimeout(() => setTestState('idle'), 3000);
     }
-  }, [client, dbStatus, dbLatency, host, port, token, history, showToast]);
+  }, [apiUrl, apiKey, history, showToast]);
 
   const formatTime = (iso: string) => {
     try {
@@ -97,45 +122,40 @@ export default function VedaDBConnectionTab({ showToast }: Props) {
     }
   };
 
-  const isConnected = dbStatus === 'connected';
+  const isConnected = connStatus.connected;
 
   return (
     <div>
       <h2 className="text-2xl font-medium text-[#1f1f1f] tracking-tight">VedaDB Connection</h2>
-      <p className="mt-1 text-sm text-[#595959]">Configure your VedaDB database connection.</p>
+      <p className="mt-1 text-sm text-[#595959]">Configure your VedaDB HTTP REST API connection.</p>
 
       {/* Connection Form */}
       <div className="mt-8 max-w-md space-y-5">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-[#595959] font-normal">Host</Label>
+          <Label className="text-xs uppercase tracking-wider text-[#595959] font-normal flex items-center gap-1.5">
+            <Globe size={14} /> API URL
+          </Label>
           <Input
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            placeholder="localhost"
+            value={apiUrl}
+            onChange={(e) => setApiUrl(e.target.value)}
+            placeholder="http://localhost:9090"
             className="h-10 border-[#e5e0d5] focus-visible:border-[#c9a87c] focus-visible:ring-[rgba(201,168,124,0.15)]"
           />
+          <p className="text-xs text-[#8a8a8a]">VedaDB Workbench HTTP API endpoint</p>
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-[#595959] font-normal">Port</Label>
-          <Input
-            type="number"
-            value={port}
-            onChange={(e) => setPort(e.target.value)}
-            placeholder="6380"
-            className="h-10 border-[#e5e0d5] focus-visible:border-[#c9a87c] focus-visible:ring-[rgba(201,168,124,0.15)]"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-[#595959] font-normal">Auth Token</Label>
+          <Label className="text-xs uppercase tracking-wider text-[#595959] font-normal flex items-center gap-1.5">
+            <KeyRound size={14} /> API Key
+          </Label>
           <Input
             type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Optional authentication token"
+            value={apiKey}
+            onChange={(e) => setApiKeyState(e.target.value)}
+            placeholder="Optional API key"
             className="h-10 border-[#e5e0d5] focus-visible:border-[#c9a87c] focus-visible:ring-[rgba(201,168,124,0.15)]"
           />
+          <p className="text-xs text-[#8a8a8a]">Optional authentication key for secured endpoints</p>
         </div>
 
         <div className="flex gap-3 pt-2">
@@ -192,13 +212,7 @@ export default function VedaDBConnectionTab({ showToast }: Props) {
           <div className="flex items-center gap-3">
             <Timer size={14} className="text-[#8a8a8a]" />
             <span className="text-sm text-[#595959]">Query Latency</span>
-            <span className="ml-auto text-sm font-medium text-[#1f1f1f]">{dbLatency}ms</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Info size={14} className="text-[#8a8a8a]" />
-            <span className="text-sm text-[#595959]">VedaDB Version</span>
-            <span className="ml-auto text-sm font-medium text-[#1f1f1f]">1.0.0</span>
+            <span className="ml-auto text-sm font-medium text-[#1f1f1f]">{connStatus.latency}ms</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -209,11 +223,17 @@ export default function VedaDBConnectionTab({ showToast }: Props) {
             </span>
           </div>
 
-          {lastConnected && (
+          <div className="flex items-center gap-3">
+            <Server size={14} className="text-[#8a8a8a]" />
+            <span className="text-sm text-[#595959]">Endpoint</span>
+            <span className="ml-auto text-sm font-medium text-[#1f1f1f]">{apiUrl}</span>
+          </div>
+
+          {connStatus.error && (
             <div className="flex items-center gap-3">
-              <Server size={14} className="text-[#8a8a8a]" />
-              <span className="text-sm text-[#595959]">Endpoint</span>
-              <span className="ml-auto text-sm font-medium text-[#1f1f1f]">{host}:{port}</span>
+              <XCircle size={14} className="text-[#f5222d]" />
+              <span className="text-sm text-[#595959]">Last Error</span>
+              <span className="ml-auto text-sm font-medium text-[#f5222d]">{connStatus.error}</span>
             </div>
           )}
         </div>

@@ -1,22 +1,25 @@
 /**
  * VedaDB Connection Status Indicator Pill
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import useAppStore from '@/lib/vedadb-store';
+import { getConnectionStatus, getApiBase } from '@/lib/vedadb-api';
 
 export default function VedaDBStatus() {
   const dbStatus = useAppStore((s) => s.dbStatus);
-  const dbLatency = useAppStore((s) => s.dbLatency);
-  const client = useAppStore((s) => s.client);
+  const [latency, setLatency] = useState(0);
   const [expanded, setExpanded] = useState(false);
 
-  const config = {
-    host: client?._connectionInfo.host || 'localhost',
-    port: client?._connectionInfo.port || 6380,
-    latency: dbLatency,
-  };
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLatency(getConnectionStatus().latency);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const apiUrl = getApiBase();
 
   const statusConfig = {
     connected: {
@@ -64,16 +67,12 @@ export default function VedaDBStatus() {
           <img src="./vedadb-logo.svg" alt="VedaDB" className="mb-2 h-5 w-auto opacity-60" />
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between">
-              <span className="text-[#8a8a8a]">Host</span>
-              <span className="font-mono text-[#1f1f1f]">{config.host}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#8a8a8a]">Port</span>
-              <span className="font-mono text-[#1f1f1f]">{config.port}</span>
+              <span className="text-[#8a8a8a]">API URL</span>
+              <span className="font-mono text-[#1f1f1f] truncate max-w-[120px]">{apiUrl}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#8a8a8a]">Latency</span>
-              <span className="font-mono text-[#1f1f1f]">{config.latency}ms</span>
+              <span className="font-mono text-[#1f1f1f]">{latency}ms</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#8a8a8a]">Status</span>
