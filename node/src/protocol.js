@@ -260,8 +260,16 @@ class ProtocolHandler extends EventEmitter {
 
       try {
         const parsed = JSON.parse(line);
-        if (parsed.error) {
-          pending.reject(new QueryError(parsed.error, parsed));
+        let errorMsg = parsed.error;
+        if (!errorMsg && parsed.message && typeof parsed.message === 'string' && parsed.message.trim().startsWith('{"error":')) {
+          try {
+            const nested = JSON.parse(parsed.message);
+            errorMsg = nested.error;
+          } catch (_) {}
+        }
+
+        if (errorMsg) {
+          pending.reject(new QueryError(errorMsg, parsed));
         } else if (parsed.type === FrameType.EVENT) {
           this.emit('event', parsed);
           // Re-queue this pending since it wasn't our response

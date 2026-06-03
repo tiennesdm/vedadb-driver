@@ -402,7 +402,8 @@ export class Model<T = any> {
     // Split on semicolons and execute each statement
     const statements = sql.split(';').map((s) => s.trim()).filter(Boolean);
     for (const stmt of statements) {
-      await this.executor(stmt + ';');
+      const cleanStmt = stmt.replace(/[\r\n]+/g, ' ').trim();
+      await this.executor(cleanStmt + ';');
     }
   }
 }
