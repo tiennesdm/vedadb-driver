@@ -140,6 +140,7 @@ export interface DriverPool {
 
 export function castValue(value: string | null | undefined, fieldType: FieldType): any {
   if (value === null || value === undefined) return null;
+  if (typeof value === 'string' && (value === 'NULL' || value === 'null')) return null;
 
   switch (fieldType) {
     case FieldType.INT:
