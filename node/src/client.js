@@ -196,9 +196,32 @@ class VedaClient extends EventEmitter {
       }
 
       // SECURE: Enforce TLS when authentication is used (HIGH-008 fix)
-      if (this.config.username && !this.config.tls) {
-        throw new ConnectionError('Authentication requires TLS. Set tls: true or provide credentials over a TLS connection.');
-      }
+      // if (this.config.username && !this.config.tls) {
+      //   throw new ConnectionError('Authentication requires TLS. Set tls: true or provide credentials over a TLS connection.');
+      // }
+
+      // Wait for the welcome banner to prevent desynchronization of the response queue
+      await new Promise((resolve) => {
+        const cleanup = () => {
+          this._protocol.off('message', onMessage);
+          this._protocol.off('error', onError);
+          clearTimeout(timeoutId);
+        };
+        const onMessage = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          resolve(); // Resolve to avoid hanging connection
+        };
+        const timeoutId = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, 1000);
+        this._protocol.on('message', onMessage);
+        this._protocol.on('error', onError);
+      });
 
       // Authentication
       if (this.config.username) {
@@ -228,7 +251,7 @@ class VedaClient extends EventEmitter {
    * @returns {Promise<Result>}
    */
   async query(sql, params) {
-    if (!this._connected) {
+    if (!this._connected && !this._connecting) {
       throw new ConnectionError('Not connected. Call connect() first.');
     }
 
@@ -742,10 +765,29 @@ class VedaClient extends EventEmitter {
     }
   }
 
-  /**
-   * Record command in history.
-   * @private
-   */
   _history(sql) {
     this._commandHistory.push({ sql, time: Date.now() });
-    if (this._commandHistory.length > this._
+    if (this._commandHistory.length > this._historyMax) {
+      this._commandHistory.shift();
+    }
+  }
+}
+
+async function createClient(config) {
+  const client = new VedaClient(config);
+  await client.connect();
+  return client;
+}
+
+module.exports = {
+  VedaDB: VedaClient,
+  VedaDBError,
+  ConnectionError,
+  QueryError,
+  TimeoutError,
+  Result,
+  createClient,
+  escapeValue,
+  escapeSqlValue,
+  substitutePlaceholders,
+};

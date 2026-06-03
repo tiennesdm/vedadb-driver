@@ -124,7 +124,7 @@ export function toCreateSQL(schema: SchemaDefinition): string {
     if (def.autoIncrement) col += ' AUTOINCREMENT';
     if (def.unique && !def.primaryKey) col += ' UNIQUE';
     if (!def.nullable && !def.primaryKey) col += ' NOT NULL';
-    if (def.default !== undefined) {
+    if (def.default !== undefined && typeof def.default !== 'function') {
       if (typeof def.default === 'string') {
         col += ` DEFAULT '${def.default}'`;
       } else if (typeof def.default === 'boolean') {
