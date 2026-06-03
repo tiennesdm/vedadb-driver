@@ -175,16 +175,27 @@ export class Model<T = any> {
   // ---- CREATE ------------------------------------------------------------
 
   async create(data: Partial<T>): Promise<T> {
-    const ctx: HookContext<T> = { instance: { ...data }, operation: HookType.BEFORE_CREATE };
+    const instance = { ...data };
+    for (const [fieldName, fieldDef] of Object.entries(this.schema.fields)) {
+      if (instance[fieldName as keyof typeof instance] === undefined && fieldDef.default !== undefined) {
+        if (typeof fieldDef.default === 'function') {
+          (instance as any)[fieldName] = fieldDef.default();
+        } else {
+          (instance as any)[fieldName] = fieldDef.default;
+        }
+      }
+    }
+
+    const ctx: HookContext<T> = { instance, operation: HookType.BEFORE_CREATE };
     await this.hooks.execute(HookType.BEFORE_VALIDATE, ctx);
     await this.hooks.execute(HookType.BEFORE_CREATE, ctx);
 
-    const instance = ctx.instance;
-    const fields = Object.keys(instance).filter((k) => instance[k as keyof typeof instance] !== undefined);
+    const finalInstance = ctx.instance;
+    const fields = Object.keys(finalInstance).filter((k) => finalInstance[k as keyof typeof finalInstance] !== undefined);
     const cols = fields.map(escapeIdentifier).join(', ');
     const vals = fields.map((f) => {
       const fieldDef = this.schema.fields[f];
-      const value = instance[f as keyof typeof instance];
+      const value = finalInstance[f as keyof typeof finalInstance];
       return fieldDef ? escapeValue(value) : escapeValue(value);
     }).join(', ');
 
