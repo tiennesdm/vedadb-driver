@@ -29,7 +29,7 @@ const {
   substitutePlaceholders,
 } = require('./src/client');
 
-const { VedaPool } = require('./src/pool');
+const { ConnectionPool: VedaPool } = require('./src/pool');
 
 module.exports = {
   // Client

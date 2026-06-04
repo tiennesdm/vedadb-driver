@@ -68,20 +68,22 @@ class AuthError extends VedaDBError {
 /**
  * Pool exhaustion errors.
  */
-class PoolExhaustedError extends VedaDBError {
+class PoolExhaustedError extends ConnectionError {
   constructor(message, details) {
-    super(message || 'Connection pool exhausted', 'VEDA_POOL_EXHAUSTED', details);
+    super(message || 'Connection pool exhausted', details);
     this.name = 'PoolExhaustedError';
+    this.code = 'VEDA_POOL_EXHAUSTED';
   }
 }
 
 /**
  * Pool closed errors.
  */
-class PoolClosedError extends VedaDBError {
+class PoolClosedError extends ConnectionError {
   constructor(message) {
-    super(message || 'Pool is closed', 'VEDA_POOL_CLOSED');
+    super(message || 'Pool is closed');
     this.name = 'PoolClosedError';
+    this.code = 'VEDA_POOL_CLOSED';
   }
 }
 

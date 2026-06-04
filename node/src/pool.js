@@ -9,7 +9,7 @@
 'use strict';
 
 const { EventEmitter } = require('events');
-const { VedaClient } = require('./client');
+const { VedaDB: VedaClient } = require('./client');
 const {
   ConnectionError, PoolExhaustedError, PoolClosedError, TimeoutError,
 } = require('./errors');
@@ -42,8 +42,8 @@ class ConnectionPool extends EventEmitter {
     this.config = {
       host: config.host || 'localhost',
       port: config.port || 6380,
-      minSize: config.minSize || config.min || 2,
-      maxSize: config.maxSize || config.max || 20,
+      minSize: typeof config.minSize === 'number' ? config.minSize : (typeof config.min === 'number' ? config.min : 2),
+      maxSize: typeof config.maxSize === 'number' ? config.maxSize : (typeof config.max === 'number' ? config.max : 20),
       acquireTimeout: config.acquireTimeout || 10000,
       idleTimeout: config.idleTimeout || 300000,
       healthCheckInterval: config.healthCheckInterval || 10000,
@@ -86,6 +86,21 @@ class ConnectionPool extends EventEmitter {
   /** Number of connections in use. */
   get inUse() {
     return this._active;
+  }
+
+  /** Compatibility alias for total. */
+  get size() {
+    return this._total;
+  }
+
+  /** Compatibility alias for inUse. */
+  get activeCount() {
+    return this._active;
+  }
+
+  /** Compatibility alias for available. */
+  get idleCount() {
+    return this._idle.length;
   }
 
   /** Number of callers waiting. */

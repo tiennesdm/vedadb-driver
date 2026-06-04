@@ -8,7 +8,7 @@
 'use strict';
 
 const { EventEmitter } = require('events');
-const { ProtocolError, TimeoutError, ConnectionError } = require('./errors');
+const { ProtocolError, TimeoutError, ConnectionError, QueryError } = require('./errors');
 
 /**
  * Protocol version constants.

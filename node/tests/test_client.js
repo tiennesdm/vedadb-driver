@@ -271,7 +271,7 @@ async function testClient() {
     return { message: 'OK' };
   });
 
-  const db = new VedaDB({ host: '127.0.0.1', port });
+  const db = new VedaDB({ host: '127.0.0.1', port, tls: false });
   assert(!db.connected, 'not connected before connect()');
 
   await db.connect();
@@ -283,9 +283,9 @@ async function testClient() {
   assertEqual(result.rowCount, 2, 'query rowCount');
   assertEqual(result.toObjects()[0].name, 'Alice', 'query toObjects');
 
-  // exec
-  const msg = await db.exec('INSERT INTO users (name) VALUES (\'Carol\');');
-  assertEqual(msg, '1 row affected', 'exec message');
+  // execute
+  const msg = await db.execute('INSERT INTO users (name) VALUES (\'Carol\');');
+  assertEqual(msg, '1 row affected', 'execute message');
 
   // insert helper
   const insertMsg = await db.insert('users', { name: 'Dave', age: 40 });
@@ -304,12 +304,12 @@ async function testClient() {
   const updMsg = await db.update('users', { name: 'Updated' }, { id: 1 });
   assertEqual(updMsg, '1 row affected', 'update helper');
 
-  // deleteFrom helper
-  const delMsg = await db.deleteFrom('users', { id: 2 });
-  assertEqual(delMsg, '1 row affected', 'deleteFrom helper');
+  // delete helper
+  const delMsg = await db.delete('users', { id: 2 });
+  assertEqual(delMsg, '1 row affected', 'delete helper');
 
   // createTable
-  const createMsg = await db.createTable('CREATE TABLE t (id INT);');
+  const createMsg = await db.execute('CREATE TABLE t (id INT);');
   assertEqual(createMsg, 'Table created', 'createTable');
 
   // ping
@@ -318,7 +318,8 @@ async function testClient() {
 
   // error handling
   try {
-    await db.query('BAD QUERY;');
+    const res = await db.query('BAD QUERY;');
+    console.log('BAD QUERY returned:', JSON.stringify(res));
     assert(false, 'should have thrown QueryError');
   } catch (e) {
     assert(e instanceof QueryError, 'QueryError thrown for bad query');
@@ -327,7 +328,7 @@ async function testClient() {
 
   // transaction
   const txResult = await db.transaction(async (client) => {
-    await client.exec('INSERT INTO users (name) VALUES (\'TxUser\');');
+    await client.execute('INSERT INTO users (name) VALUES (\'TxUser\');');
     return 'done';
   });
   assertEqual(txResult, 'done', 'transaction returns value');
@@ -345,7 +346,7 @@ async function testClient() {
 async function testNotConnected() {
   console.log('\n--- Not connected errors ---');
 
-  const db = new VedaDB({ host: '127.0.0.1', port: 1 });
+  const db = new VedaDB({ host: '127.0.0.1', port: 1, tls: false });
 
   try {
     await db.query('SELECT 1;');
@@ -372,7 +373,7 @@ async function testPool() {
     return { message: 'OK' };
   });
 
-  const pool = new VedaPool({ host: '127.0.0.1', port, min: 1, max: 3 });
+  const pool = new VedaPool({ host: '127.0.0.1', port, min: 1, max: 3, tls: false, warmup: false });
   assertEqual(pool.size, 0, 'initial size = 0');
 
   // acquire / release
@@ -389,9 +390,9 @@ async function testPool() {
   const result = await pool.query('SELECT 42;');
   assertEqual(result.rows[0][0], '42', 'pool.query works');
 
-  // pool.exec convenience
-  const msg = await pool.exec('CREATE TABLE test (id INT);');
-  assertEqual(msg, 'OK', 'pool.exec works');
+  // pool.execute convenience
+  const msg = await pool.execute('CREATE TABLE test (id INT);');
+  assertEqual(msg, 'OK', 'pool.execute works');
 
   // acquire multiple up to max
   const c1 = await pool.acquire();
@@ -401,7 +402,7 @@ async function testPool() {
 
   // next acquire should wait (and timeout)
   const poolTimeout = new VedaPool({
-    host: '127.0.0.1', port, max: 0, acquireTimeout: 100,
+    host: '127.0.0.1', port, max: 0, acquireTimeout: 100, tls: false,
   });
   try {
     await poolTimeout.acquire();
@@ -442,7 +443,7 @@ async function testCreateClient() {
     return { message: 'OK' };
   });
 
-  const db = await createClient({ host: '127.0.0.1', port });
+  const db = await createClient({ host: '127.0.0.1', port, tls: false });
   assert(db instanceof VedaDB, 'createClient returns VedaDB');
   assert(db.connected, 'createClient auto-connects');
   db.close();
