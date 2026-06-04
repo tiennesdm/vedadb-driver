@@ -246,8 +246,27 @@ export class Model<T = any> {
     return qb.first();
   }
 
-  async findMany(where?: Partial<T>): Promise<T[]> {
+  async findMany(where?: any): Promise<T[]> {
     if (where) {
+      const isOptionsObject = typeof where === 'object' && ('where' in where || 'take' in where || 'skip' in where || 'orderBy' in where);
+      if (isOptionsObject) {
+        let qb = this.where((where.where || {}) as any);
+        if (where.orderBy) {
+          if (typeof where.orderBy === 'object') {
+            for (const [col, dir] of Object.entries(where.orderBy)) {
+              const direction = typeof dir === 'string' ? dir.toUpperCase() : 'ASC';
+              qb = qb.orderBy(col as any, direction as any);
+            }
+          }
+        }
+        if (where.take !== undefined && where.take !== null) {
+          qb = qb.limit(Number(where.take));
+        }
+        if (where.skip !== undefined && where.skip !== null) {
+          qb = qb.offset(Number(where.skip));
+        }
+        return qb.all();
+      }
       return this.where(where as any).all();
     }
     return this.where({} as any).all();
@@ -255,7 +274,7 @@ export class Model<T = any> {
 
   // ---- UPDATE ------------------------------------------------------------
 
-  async updateOne(where: Partial<T>, data: Partial<T>): Promise<void> {
+  async updateOne(where: Partial<T>, data: Partial<T>): Promise<T | null> {
     const ctx: HookContext<T> = { instance: { ...data }, operation: HookType.BEFORE_UPDATE };
     await this.hooks.execute(HookType.BEFORE_VALIDATE, ctx);
     await this.hooks.execute(HookType.BEFORE_UPDATE, ctx);
@@ -265,7 +284,7 @@ export class Model<T = any> {
       .map(([k, v]) => `${escapeIdentifier(k)} = ${escapeValue(v)}`)
       .join(', ');
 
-    if (!setFields) return;
+    if (!setFields) return this.findOne(where);
 
     const whereClause = Object.entries(where)
       .filter(([_, v]) => v !== undefined)
@@ -280,12 +299,22 @@ export class Model<T = any> {
     sql += ';';
 
     await this.executor(sql);
+    const updated = await this.findOne(where);
     await this.hooks.execute(HookType.AFTER_UPDATE, { instance: ctx.instance, operation: HookType.AFTER_UPDATE });
+    return updated;
   }
 
   async updateMany(where: Partial<T>, data: Partial<T>): Promise<void> {
     // Same as updateOne but without LIMIT
     await this.updateOne(where, data);
+  }
+
+  async update(where: Partial<T>, data: Partial<T>): Promise<T | null> {
+    return this.updateOne(where, data);
+  }
+
+  async delete(where: Partial<T>): Promise<void> {
+    await this.deleteOne(where);
   }
 
   // ---- DELETE ------------------------------------------------------------
