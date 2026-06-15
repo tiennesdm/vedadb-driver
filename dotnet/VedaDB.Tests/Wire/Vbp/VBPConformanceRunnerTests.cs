@@ -115,11 +115,18 @@ tests:
         }
 
         [Fact]
-        public void Run_EmptyFile_ProducesEmpty()
+        public void Run_EmptyFile_HasOnlyHiddenMultichunkTest()
         {
+            // V2 STREAMING FIX: even on an empty YAML, the conformance runner
+            // always appends the hidden multiplexer_streaming_multichunk test
+            // (id=9999) — same behavior as the PHP POC. The empty YAML
+            // contributes zero YAML-driven tests; the hidden multichunk test
+            // contributes exactly one outcome.
             var path = WriteTemp("");
             var outcomes = VBPConformanceRunner.Run(path, "127.0.0.1", 1, "u", "p", "");
-            Assert.Empty(outcomes);
+            Assert.Single(outcomes);
+            Assert.Equal(9999, outcomes[0].Id);
+            Assert.Equal("multiplexer_streaming_multichunk", outcomes[0].Name);
             File.Delete(path);
         }
     }

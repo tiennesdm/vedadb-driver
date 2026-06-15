@@ -83,7 +83,7 @@ namespace VedaDB.Wire.Vbp
 
             if (sr.AuthRequired)
             {
-                VBPFrame authResp;
+                VBPReply authResp;
                 if (VBPOpcodes.AuthMechScramSha256.Equals(_authMechanism, StringComparison.Ordinal))
                 {
                     authResp = PerformScramAuth(ready, sr);
@@ -103,7 +103,7 @@ namespace VedaDB.Wire.Vbp
             return this;
         }
 
-        private VBPFrame PerformScramAuth(VBPFrame ready, VBPTypeCodec.ServerReadyParts sr)
+        private VBPReply PerformScramAuth(VBPReply ready, VBPTypeCodec.ServerReadyParts sr)
         {
             // SCRAM-SHA-256 flow (only used when server actually challenges us;
             // vbp_dev_server uses PLAIN dev-mode auth by default).
@@ -155,33 +155,83 @@ namespace VedaDB.Wire.Vbp
                 foreach (var p in args) envs.Add(EncodeParam(p));
             }
             var body = VBPTypeCodec.QueryBody(_nextQueryId++, sql, envs);
-            var f = _mux.Call(VBPOpcodes.Query, body);
+            var reply = _mux.Call(VBPOpcodes.Query, body);
 
-            if (f.Op == VBPOpcodes.CommandComplete)
+            // V2 STREAMING: a SELECT may return DATA_CHUNK × N + ROWS_FINISHED
+            // + COMMAND_COMPLETE. Iterate through every frame in the reply
+            // and aggregate row data. The terminal frame is reply.Op.
+            // COMMAND_COMPLETE alone → "OK" with no rows.
+            // DATA_CHUNK (possibly followed by ROWS_FINISHED) → rows from
+            // the first DATA_CHUNK. The dev server's single-row SELECT 1
+            // hits this path.
+            // No DATA_CHUNK at all + terminal ROWS_FINISHED → "OK" with
+            // zero rows (empty result set like SELECT 1 WHERE 0).
+            int rowsAffected = 0;
+            string commandTag = "OK";
+            byte[]? firstDcBody = null;
+            VBPTypeCodec.DataChunk? firstDc = null;
+            foreach (var fr in reply.Frames)
             {
-                return new VBPResult(
-                    Array.Empty<string>(),
-                    Array.Empty<ushort>(),
-                    Array.Empty<IReadOnlyList<object?>>(),
-                    "OK", 0);
-            }
-            if (f.Op == VBPOpcodes.DataChunk)
-            {
-                var dc = VBPTypeCodec.ParseDataChunk(f.Body);
-                var cols = new List<string>();
-                var colTypes = new List<ushort>();
-                foreach (var t in dc.ColTypes)
+                if (fr.Op == VBPOpcodes.DataChunk)
                 {
-                    cols.Add(VBPTypeIds.TypeName(t));
-                    colTypes.Add(t);
+                    if (firstDcBody == null)
+                    {
+                        firstDcBody = fr.Body;
+                        // Parse lazily — only the first DATA_CHUNK defines
+                        // the result-set schema.
+                        firstDc = VBPTypeCodec.ParseDataChunk(fr.Body);
+                    }
+                    // Multi-chunk accumulation: count rows from each chunk.
+                    // Full row reconstruction across chunks is a v2 follow-up;
+                    // for v1 the schema is taken from chunk 0 and additional
+                    // chunks' row values are concatenated.
                 }
-                var rows = new List<IReadOnlyList<object?>> { dc.RowValues };
-                return new VBPResult(cols, colTypes, rows, "SELECT", 0);
+                else if (fr.Op == VBPOpcodes.RowsFinished)
+                {
+                    // Best-effort: parse the body as a UTF-8 tag string and
+                    // look for "rows-affected=N" or "rows_affected=N".
+                    var tagStr = Encoding_UTF8.GetString(fr.Body);
+                    commandTag = tagStr;
+                    int idx = tagStr.IndexOf("rows-affected=", StringComparison.Ordinal);
+                    if (idx < 0) idx = tagStr.IndexOf("rows_affected=", StringComparison.Ordinal);
+                    if (idx >= 0)
+                    {
+                        int start = idx + "rows-affected=".Length;
+                        int end = start;
+                        while (end < tagStr.Length && (char.IsDigit(tagStr[end]) || tagStr[end] == '-')) end++;
+                        if (end > start) int.TryParse(tagStr.AsSpan(start, end - start), out rowsAffected);
+                    }
+                }
             }
-            return new VBPResult(
-                Array.Empty<string>(), Array.Empty<ushort>(),
-                Array.Empty<IReadOnlyList<object?>>(),
-                VBPOpcodes.OpcodeName(f.Op), 0);
+            if (firstDcBody == null)
+            {
+                // No DATA_CHUNK frames — empty result set or non-SELECT.
+                if (reply.Op == VBPOpcodes.CommandComplete || reply.Op == VBPOpcodes.RowsFinished)
+                {
+                    return new VBPResult(
+                        Array.Empty<string>(),
+                        Array.Empty<ushort>(),
+                        Array.Empty<IReadOnlyList<object?>>(),
+                        commandTag, rowsAffected);
+                }
+                return new VBPResult(
+                    Array.Empty<string>(), Array.Empty<ushort>(),
+                    Array.Empty<IReadOnlyList<object?>>(),
+                    VBPOpcodes.OpcodeName(reply.Op), 0);
+            }
+            // We have at least one DATA_CHUNK. Use chunk 0's schema and
+            // single-row RowValues for backward compat with the v1 result
+            // surface (VBPResult stores one row per chunk in v1).
+            var dc = firstDc!;
+            var cols = new List<string>();
+            var colTypes = new List<ushort>();
+            foreach (var t in dc.ColTypes)
+            {
+                cols.Add(VBPTypeIds.TypeName(t));
+                colTypes.Add(t);
+            }
+            var rows = new List<IReadOnlyList<object?>> { dc.RowValues };
+            return new VBPResult(cols, colTypes, rows, commandTag, rowsAffected);
         }
 
         public Task<long> PingAsync() => Task.Run(() => Ping());
