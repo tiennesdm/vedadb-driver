@@ -511,7 +511,8 @@ def connect(
     tls_insecure: bool = False,
     tls_ca_file: str | None = None,
     max_retries: int = 3,
-) -> VedaDB:
+    transport: str = "http",
+) -> "VedaDB | Any":
     """Create a new :class:`VedaDB` client.
 
     Args:
@@ -527,15 +528,40 @@ def connect(
         tls_insecure: Skip TLS verification (dev only).
         tls_ca_file: Path to CA certificate.
         max_retries: Retry attempts on failure.
+        transport: ``"http"`` (default, backward-compatible) or
+            ``"vbp"`` (VedaDB Binary Protocol, opt-in).  When
+            ``"vbp"``, ``port`` is interpreted as the VBP port
+            (default 6380) and a :class:`VBPConnection` is returned
+            in place of :class:`VedaDB``.
 
     Returns:
-        Connected :class:`VedaDB` instance.
+        Connected :class:`VedaDB` instance (or :class:`VBPConnection`
+        when ``transport="vbp"``).
     """
     if addr and not base_url:
         import urllib.parse
         parsed = urllib.parse.urlparse(f"//{addr}")
         host = parsed.hostname or host
         port = parsed.port or port
+
+    if transport == "vbp":
+        # Opt-in VBP transport.  The VBP port defaults to 6380 (the
+        # engine's VBP listener), not 8080.  We do NOT silently
+        # re-route to 8080 — call out the change so callers know.
+        from .wire.vbp import VBPConnection
+        vbp_port = port if port != 8080 else 6380
+        return VBPConnection(
+            host=host,
+            port=vbp_port,
+            user=username or "",
+            password=password or "",
+            db=database or "",
+            timeout=timeout,
+        ).connect()
+    if transport != "http":
+        raise ValueError(
+            f"unknown transport {transport!r}: expected 'http' or 'vbp'"
+        )
 
     return VedaDB(
         host=host,

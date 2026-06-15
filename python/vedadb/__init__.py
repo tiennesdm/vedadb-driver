@@ -136,6 +136,16 @@ from .driver import VedaDB, connect, PreparedStatement
 from .pool import ConnectionPool, PooledConnection, PoolStats
 from .async_client import AsyncVedaDB, AsyncConnectionPool
 
+# VBP — VedaDB Binary Protocol (v1, opt-in transport).  We import
+# lazily so that `import vedadb` still works on systems without the
+# optional `cryptography` dependency.  Callers wanting VBP should
+# `from vedadb.wire.vbp import VBPConnection`.
+try:
+    from .wire.vbp import VBPConnection as VBPConnection, VBPError as VBPError  # type: ignore
+except Exception:  # pragma: no cover — optional import; fail-soft
+    VBPConnection = None  # type: ignore
+    VBPError = None  # type: ignore
+
 # P0 -- Critical
 from .retry import RetryPolicy, retry, RetryableError, NonRetryableError, MaxRetriesExceeded
 from .circuit import CircuitBreaker, CircuitOpenError, circuit_breaker
