@@ -12,6 +12,41 @@
  * `Map<seq, { frames: Frame[], event: () => void, error: Error|null }>`
  * and the `net.Socket` 'data' event drives the reader.
  *
+ * **CRITICAL — multiplexer streaming fix (the team-engine's v2 finding):**
+ *
+ *   A single VBP response is a *stream* of frames, not a single frame.
+ *   A typical QUERY response is
+ *
+ *     [DATA_CHUNK, DATA_CHUNK, ..., ROWS_FINISHED, COMMAND_COMPLETE]
+ *
+ *   The original v1 Node multiplexer had a heuristic that treated
+ *   AUTH_OK / COMMAND_COMPLETE / PONG as terminal and everything else
+ *   (including ROWS_FINISHED, SERVER_READY, CLOSE) as non-terminal.
+ *   That worked for the most common query stream by accident (it
+ *   ended on COMMAND_COMPLETE) but caused:
+ *
+ *     - A response that ended with ROWS_FINISHED alone (e.g. an empty
+ *       result) would NEVER resolve — the call() would hang until the
+ *       timeout.
+ *     - A handshake that replied SERVER_READY + AUTH_OK in two frames
+ *       would deliver only the AUTH_OK and overwrite the SERVER_READY
+ *       frames that the caller may have inspected.
+ *     - A server CLOSE frame (0x18) would never resolve in-flight
+ *       call()s even though it is unambiguously terminal.
+ *
+ *   The fix is the explicit TERMINAL_OPCODES set in opcodes.js. In
+ *   _dispatchFrame, every frame is:
+ *
+ *     - TERMINAL (ROWS_FINISHED / COMMAND_COMPLETE / ERROR /
+ *       SERVER_READY / AUTH_OK / AUTH_CHALLENGE / PONG / CLOSE):
+ *       accumulate, mark done, deliver the accumulated frames.
+ *     - NON-TERMINAL (DATA_CHUNK, STREAM_CHUNK, etc.):
+ *       accumulate, do NOT mark done, do NOT delete the slot.
+ *
+ *   ERROR is terminal but the slot is REJECTED (the call() throws a
+ *   VBPError) rather than resolved with frames — the caller never sees
+ *   the partial frames.
+ *
  * Public API:
  *   call(op, body, opts) -> Promise<Frame[]>
  *   send(op, body) -> seq
@@ -25,7 +60,7 @@ const {
   Frame, VBPBadMagic, VBPConnectionClosed, VBPFrameTooShort, VBPFrameTooLarge,
   VBPProtocolError, tryDecodeFrame, feedBytes, resetState,
 } = require('./frame');
-const { OP_ERROR, opcodeName } = require('./opcodes');
+const { OP_ERROR, isTerminal, opcodeName } = require('./opcodes');
 
 class VBPError extends Error {
   constructor(sqlstate, message, detail = '', hint = '') {
@@ -73,7 +108,14 @@ class Multiplexer {
   call(op, body, opts = {}) {
     return new Promise((resolve, reject) => {
       const seq = this._alloc();
-      const entry = { frames: [], done: false, error: null, callbacks: [] };
+      const entry = {
+        frames: [],
+        done: false,
+        error: null,
+        terminal: false,
+        delivered: false,
+        callbacks: [],
+      };
       entry.callbacks.push({ resolve, reject });
       this._inflight.set(seq, entry);
       this._lastCallSeq = seq;
@@ -99,7 +141,14 @@ class Multiplexer {
 
   send(op, body, flags = 0) {
     const seq = this._alloc();
-    const entry = { frames: [], done: false, error: null, callbacks: [] };
+    const entry = {
+      frames: [],
+      done: false,
+      error: null,
+      terminal: false,
+      delivered: false,
+      callbacks: [],
+    };
     this._inflight.set(seq, entry);
     this._sendFrame(seq, op, flags, body);
     return seq;
@@ -163,7 +212,15 @@ class Multiplexer {
       // Protocol error — close and reject all waiters.
       this._failAllWaiters(e);
       this.close();
+      return;
     }
+    // *** THE STREAMING FIX ***
+    // Deliver any slots that hit a terminal frame in this drain pass.
+    // We do this AFTER the drain loop so that a multi-frame terminal
+    // response (e.g. [DATA_CHUNK ×N, ROWS_FINISHED, COMMAND_COMPLETE])
+    // accumulates ALL frames (including both terminal ones) before
+    // resolving the call() promise.
+    this._deliverTerminals();
   }
 
   _onSocketError(err) {
@@ -197,26 +254,68 @@ class Multiplexer {
       // Truly unsolicited — drop.
       return;
     }
-    // Terminating opcodes (the response stream ends after one of these).
+    // *** THE STREAMING FIX ***
+    //
+    // Push the frame first (so the caller sees it in the accumulated
+    // list even on the ERROR path — useful for debugging). Then
+    // decide whether this frame ends the stream.
+    entry.frames.push(frame);
     if (frame.op === OP_ERROR) {
+      // ERROR is terminal but the call() rejects rather than resolves.
+      // We still keep the partial frames in entry.frames for inspection
+      // (e.g. DATA_CHUNKs received before the ERROR).
       const { sqlstate, message, detail, hint } = Multiplexer.parseErrorFrame(frame);
       entry.error = new VBPError(sqlstate, message, detail, hint);
-      entry.done = true;
-      for (const cb of entry.callbacks) cb.reject(entry.error);
-      this._inflight.delete(this._lastCallSeq || frame.seq);
+      entry.terminal = true;
+      // We resolve/reject in _deliverTerminals() so any additional
+      // frames that were already in the same TCP chunk are accumulated
+      // first.
       return;
     }
-    entry.frames.push(frame);
-    // Heuristic: AUTH_OK, COMMAND_COMPLETE, PONG mark end of stream.
-    // (ROWS_FINISHED is NOT terminal — server emits COMMAND_COMPLETE after it.)
-    if (
-      frame.op === 0x05 || // OP_AUTH_OK
-      frame.op === 0x0C || // OP_COMMAND_COMPLETE
-      frame.op === 0x17    // OP_PONG
-    ) {
+    if (isTerminal(frame.op)) {
+      // ROWS_FINISHED, COMMAND_COMPLETE, SERVER_READY, AUTH_OK,
+      // AUTH_CHALLENGE, PONG, CLOSE. Mark terminal; delivery happens
+      // once the drain loop has processed every frame in this chunk.
+      entry.terminal = true;
+      return;
+    }
+    // Non-terminal (DATA_CHUNK, STREAM_CHUNK, etc.) — keep going.
+  }
+
+  /**
+   * Walk all in-flight slots after a drain pass and deliver any that
+   * have hit a terminal frame.
+   *
+   * *** THE STREAMING FIX ***
+   *
+   * Before this method existed, the v1 multiplexer resolved the
+   * call() promise on the FIRST terminal frame it saw. That meant a
+   * response stream like
+   *
+   *   [DATA_CHUNK, DATA_CHUNK, ROWS_FINISHED, COMMAND_COMPLETE]
+   *
+   * would deliver only [DATA_CHUNK, DATA_CHUNK, ROWS_FINISHED] (3
+   * frames) and drop the trailing COMMAND_COMPLETE on the floor.
+   * The fix is to keep reading frames in the same _onData chunk,
+   * then deliver once per drain pass.
+   */
+  _deliverTerminals() {
+    // Iterate over a snapshot so we can delete from the live map.
+    const toDeliver = [];
+    for (const [seq, entry] of this._inflight) {
+      if (entry.terminal && !entry.delivered) {
+        toDeliver.push([seq, entry]);
+      }
+    }
+    for (const [seq, entry] of toDeliver) {
+      entry.delivered = true;
       entry.done = true;
-      for (const cb of entry.callbacks) cb.resolve(entry.frames);
-      this._inflight.delete(this._lastCallSeq || frame.seq);
+      this._inflight.delete(seq);
+      if (entry.error) {
+        for (const cb of entry.callbacks) cb.reject(entry.error);
+      } else {
+        for (const cb of entry.callbacks) cb.resolve(entry.frames);
+      }
     }
   }
 

@@ -57,6 +57,42 @@ if (MANDATORY_OPCODES.length !== 23) {
   throw new Error(`VBP v1 mandates exactly 23 opcodes, got ${MANDATORY_OPCODES.length}`);
 }
 
+// ---------------------------------------------------------------------------
+// Terminal vs non-terminal opcodes
+// ---------------------------------------------------------------------------
+//
+// A TERMINAL opcode marks the end of a single response stream (one in-flight
+// seq id). The multiplexer delivers the accumulated frames to the caller
+// and releases the seq slot.
+//
+// A NON-TERMINAL opcode (DATA_CHUNK, STREAM_CHUNK, AUTH_CHALLENGE) is part
+// of a streaming response and is ACCUMULATED into the seq's frames buffer;
+// the multiplexer keeps waiting for a terminal frame.
+//
+// The original POCs (including the v1 Node multiplexer) had a heuristic
+// that only treated AUTH_OK / COMMAND_COMPLETE / PONG as terminal. That
+// broke multi-chunk query responses (a [DATA_CHUNK ×N, COMMAND_COMPLETE]
+// stream happened to work, but a response that ended with ROWS_FINISHED
+// alone, or a handshake that replied SERVER_READY + AUTH_OK separately,
+// would hang the call() forever). The fix is the explicit TERMINAL set
+// below — every opcode that ends a stream is named explicitly. See
+// VBP_SPEC.md §4 and the team-engine's v2 multichunk fix.
+
+const TERMINAL_OPCODES = Object.freeze({
+  [OP_ROWS_FINISHED]: true,    // 0x0B — end of row data
+  [OP_COMMAND_COMPLETE]: true, // 0x0C — final ack
+  [OP_ERROR]: true,            // 0x0D — error response
+  [OP_SERVER_READY]: true,     // 0x02 — handshake reply
+  [OP_AUTH_OK]: true,          // 0x05 — auth success
+  [OP_AUTH_CHALLENGE]: true,   // 0x03 — auth challenge (handshake complete)
+  [OP_PONG]: true,             // 0x17 — PING reply
+  [OP_CLOSE]: true,            // 0x18 — connection-level close
+});
+
+function isTerminal(op) {
+  return TERMINAL_OPCODES[op] === true;
+}
+
 const OPCODE_NAMES = {
   [OP_CLIENT_HELLO]: 'CLIENT_HELLO',
   [OP_SERVER_READY]: 'SERVER_READY',
@@ -194,7 +230,7 @@ module.exports = {
   OP_COMMAND_COMPLETE, OP_ERROR, OP_BEGIN, OP_COMMIT, OP_ROLLBACK,
   OP_COPY_IN, OP_COPY_DONE, OP_COPY_FAIL, OP_CANCEL_QUERY,
   OP_PING, OP_PONG, OP_CLOSE,
-  MANDATORY_OPCODES, OPCODE_NAMES, opcodeName,
+  MANDATORY_OPCODES, TERMINAL_OPCODES, isTerminal, OPCODE_NAMES, opcodeName,
   // Type IDs
   T_BOOL, T_INT2, T_INT4, T_INT8,
   T_FLOAT4, T_FLOAT8,
