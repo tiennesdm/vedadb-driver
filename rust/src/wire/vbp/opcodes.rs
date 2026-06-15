@@ -115,6 +115,40 @@ pub fn opcode_name(op: u8) -> &'static str {
     }
 }
 
+/// Return `true` if `op` is a TERMINAL reply for a single request.
+///
+/// A terminal reply is the final frame for a given seq id — the
+/// multiplexer delivers the accumulated frames to the caller and
+/// releases the seq slot. Non-terminal opcodes (e.g. DATA_CHUNK,
+/// STREAM_CHUNK) are accumulated into the slot's buffer and the
+/// slot is kept open for further frames.
+///
+/// Terminal set (matches PHP `VBPMultiplexer::dispatchFrame` and the
+/// v2 streaming fix brief):
+///   * `OP_ERROR`              (0x0D) — terminal, payload carries SQLSTATE
+///   * `OP_ROWS_FINISHED`      (0x0B) — terminal, all rows delivered
+///   * `OP_COMMAND_COMPLETE`   (0x0C) — terminal, statement finished
+///   * `OP_AUTH_OK`            (0x05) — terminal, auth succeeded
+///   * `OP_AUTH_CHALLENGE`     (0x03) — terminal, one SCRAM round
+///   * `OP_SERVER_READY`       (0x02) — terminal, HELLO accepted
+///   * `OP_PONG`               (0x17) — terminal, PING reply
+///   * `OP_STREAM_END`         (0x1A) — terminal, streaming copy done
+///   * `OP_CLOSE`              (0x18) — terminal, server closing
+pub fn is_terminal(op: u8) -> bool {
+    matches!(
+        op,
+        OP_ERROR
+            | OP_ROWS_FINISHED
+            | OP_COMMAND_COMPLETE
+            | OP_AUTH_OK
+            | OP_AUTH_CHALLENGE
+            | OP_SERVER_READY
+            | OP_PONG
+            | OP_STREAM_END
+            | OP_CLOSE
+    )
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Type IDs (VBP v1, 27 mandatory)
 // ────────────────────────────────────────────────────────────────────
@@ -307,5 +341,36 @@ mod tests {
     fn auth_mech_constants_distinct() {
         assert_ne!(AUTH_MECH_PLAIN, AUTH_MECH_SCRAM_SHA_256);
         assert_ne!(AUTH_MECH_PLAIN, AUTH_MECH_NONE);
+    }
+
+    #[test]
+    fn is_terminal_marks_known_terminal_opcodes() {
+        // Terminal: end-of-reply markers.
+        assert!(is_terminal(OP_ERROR));
+        assert!(is_terminal(OP_ROWS_FINISHED));
+        assert!(is_terminal(OP_COMMAND_COMPLETE));
+        assert!(is_terminal(OP_AUTH_OK));
+        assert!(is_terminal(OP_AUTH_CHALLENGE));
+        assert!(is_terminal(OP_SERVER_READY));
+        assert!(is_terminal(OP_PONG));
+        assert!(is_terminal(OP_STREAM_END));
+        assert!(is_terminal(OP_CLOSE));
+    }
+
+    #[test]
+    fn is_terminal_does_not_mark_streaming_opcodes() {
+        // Non-terminal: streaming opcodes that the multiplexer must
+        // ACCUMULATE into the inflight slot's buffer.
+        assert!(!is_terminal(OP_DATA_CHUNK), "DATA_CHUNK must accumulate");
+        assert!(!is_terminal(OP_STREAM_CHUNK), "STREAM_CHUNK must accumulate");
+        // Server push is unsolicited and not part of a request, but
+        // it is still not a terminal-of-request — keep slot open if
+        // a future reply needs to follow.
+        assert!(!is_terminal(OP_SERVER_PUSH));
+        // Lifecycle: client-to-server only, never a reply, but assert
+        // the helper says non-terminal so the dispatch logic can
+        // never accidentally treat it as the end of a slot.
+        assert!(!is_terminal(OP_CLIENT_HELLO));
+        assert!(!is_terminal(OP_QUERY));
     }
 }
