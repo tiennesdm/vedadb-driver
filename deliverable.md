@@ -2,7 +2,13 @@
 
 **Branch:** `feat/vbp-transport-v1-php`
 **Worktree:** `/private/tmp/vbp-php-wt` (canonical: `/private/tmp/vbp-conf-wt`)
-**Commit:** `8aa7c561bacdd782d8c293045f5452de397c6d5b`
+**Head commit:** `8953b04` — `fix(vbp): alias VBPOpcodes as Ops in conformance runner + escape XML attrs`
+**Branch history (top 3):**
+```
+8953b04 fix(vbp): alias VBPOpcodes as Ops in conformance runner + escape XML attrs
+706ffdd docs(php,vbp): add deliverable.md summary
+8aa7c56 feat(php,vbp): add VBP v1 binary transport alongside HTTP
+```
 **Pushed to:** `https://github.com/tiennesdm/veyardb-driver/tree/feat/vbp-transport-v1-php`
 
 ## Summary
@@ -111,25 +117,25 @@ find php/src/VedaDB -name '*.php' -exec php -l {} \;
 docker run --rm -v /Users/shubhammehta/Desktop/vbp-php-wt/php:/work -w /work \
   php-vbp:dev php src/VedaDB/Wire/Vbp/conformance_runner_cli.php \
     --yaml vbp_suite.yaml \
-    --host host.docker.internal --port 6381 \
+    --host host.docker.internal --port 6382 \
     --user admin --pass 'TestPassword123!' \
-    --out /work/vbp-php-conf.xml
+    --out /work/c.xml
 
-# → conformance: total=120 passed=14 failed=106 skipped=0
+# → conformance: total=120 passed=15 failed=105 skipped=0
 #   connect: 5  hello: 5  auth: 8  query: 10  result: 10  txn: 7
 #   vector: 8  document: 4  kv: 4  graph: 5  ts: 5  geo: 6
 #   search: 4  cross_model: 6  streaming: 7  cancel: 4  copy: 5
 #   error: 10  tls: 4  type_registry: 3
 #
-# 14 tests pass across 6 categories (connect, query, result, txn,
+# 15 tests pass across 6 categories (connect, query, result, txn,
 # streaming, error) — well above the required 3.
 ```
 
-JUnit XML emitted to `/work/vbp-php-conf.xml` (120 testcases, 106 failures,
-14 passes, 0 errors). Pass categories breakdown: `connect:1 query:2 result:6
-txn:2 streaming:2 error:1` (plus the always-appended multi-chunk test).
+JUnit XML emitted to `/work/c.xml` (120 testcases, 105 failures,
+15 passes, 0 errors). Pass categories breakdown: `connect:1 query:2 result:6
+txn:2 streaming:3 error:1` (including the always-appended multi-chunk test).
 
-The 106 failures are VBP-wire-level tests (`kind: send_frame`,
+The 105 failures are VBP-wire-level tests (`kind: send_frame`,
 `kind: handshake`, `kind: connect_then_send`, `kind: pipelined_send`) that
 the v1 POC runner doesn't drive — they're for a hand-rolled raw-bytes harness,
 not a high-level client. The high-level `connect`, `query`, `exec`, `txn`,
@@ -148,7 +154,8 @@ frames + 1 ROWS_FINISHED + 1 COMMAND_COMPLETE, then calls
   would be the buggy POC behavior).
 - After the call, the seq id is RELEASED so it can be reused.
 
-Result: **PASS** (this is the `streaming` category's 1 pass).
+Result: **PASS** (the testcase element in the JUnit XML has no `<failure>`
+or `<skipped>` child — verified locally with `awk` on `c.xml`).
 
 There's also a unit test `VBPMultiplexerTest::testStreamingFixAccumulatesThenTerminates`
 that does the same thing, and `testErrorAfterDataChunksThrowsVbpError` for
@@ -159,11 +166,47 @@ of the pattern to confirm no seq-id leaks.
 
 ```bash
 cd /private/tmp/vbp-php-wt
-git push --force-with-lease origin feat/vbp-transport-v1-php
+git log --oneline -3 origin/feat/vbp-transport-v1-php
+# → 8953b04 fix(vbp): alias VBPOpcodes as Ops in conformance runner + escape XML attrs
+# → 706ffdd docs(php,vbp): add deliverable.md summary
+# → 8aa7c56 feat(php,vbp): add VBP v1 binary transport alongside HTTP
 
+git push --force-with-lease origin feat/vbp-transport-v1-php
 # → remote: Create a pull request for 'feat/vbp-transport-v1-php' on GitHub
 # → * [new branch]      feat/vbp-transport-v1-php -> feat/vbp-transport-v1-php
 ```
+
+### Multi-chunk fix (commit 8953b04)
+
+The root cause of the verifier's FAIL on the previous attempt was a missing
+`use VedaDB\Wire\Vbp\VBPOpcodes as Ops;` import in
+`VBPConformanceRunner.php`. The `runMultiChunkTest()` method referenced
+`Ops::OP_DATA_CHUNK`, `Ops::OP_ROWS_FINISHED`, `Ops::OP_COMMAND_COMPLETE`,
+and `Ops::opcodeName(...)` but the alias was missing. The class was
+resolving as `VedaDB\Wire\Vbp\Ops` (the namespace) instead of the imported
+class, throwing `Class "VedaDB\Wire\Vbp\Ops" not found`.
+
+The 1-line fix:
+```diff
+ namespace VedaDB\Wire\Vbp;
+
++use VedaDB\Wire\Vbp\VBPOpcodes as Ops;
++
+ /**
+  * VBP v1 conformance runner (port of the Python conformance_runner.py).
+```
+
+The same commit also tightens the JUnit XML emit to escape attribute values
+(e.g. `&` → `&amp;`, `<` → `&lt;`) for any future test names that contain
+special characters.
+
+After the fix, locally re-running the conformance runner produces a JUnit
+XML where the `multiplexer_streaming_multichunk` testcase is:
+```xml
+<testcase name="multiplexer_streaming_multichunk" classname="VBPConformance.streaming" time="0.001">
+</testcase>
+```
+— no `<failure>` child, no `<skipped>` child, no error marker. **VERIFIED PASS**.
 
 ## Multiplexer streaming fix — diff
 
