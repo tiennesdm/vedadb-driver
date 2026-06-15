@@ -13,19 +13,17 @@ the API level.
 Branch: **`feat/vbp-transport-v1-java`** at
 `https://github.com/tiennesdm/vedadb-driver/pull/new/feat/vbp-transport-v1-java`.
 Worktree: `/private/tmp/vbp-java-wt`. Commit hash:
-`$(git -C /private/tmp/vbp-java-wt rev-parse HEAD)` (populated below).
+`a38ef6aa20f3a3517cead3f93bc448b463e47bbb`.
 
 ## Branch & push confirmation
 
 ```
 $ git -C /private/tmp/vbp-java-wt rev-parse HEAD
-<commit-hash>
+a38ef6aa20f3a3517cead3f93bc448b463e47bbb
 $ git -C /private/tmp/vbp-java-wt push origin feat/vbp-transport-v1-java
-<push-result>
+To https://github.com/tiennesdm/veyardb-driver.git
+ * [new branch]      feat/vbp-transport-v1-java -> feat/vbp-transport-v1-java
 ```
-
-(Commit hash and push output appended at the bottom of this file once the
-push completes.)
 
 ## Files added (with LOC)
 
@@ -290,6 +288,17 @@ git -C /Users/shubhammehta/Documents/veyardb-driver/.worktrees/vbp-java-wt \
 
 ## Commits & push (appended at the bottom after the actual git push completes)
 
+```
+$ git -C /private/tmp/vbp-java-wt rev-parse HEAD
+a38ef6aa20f3a3517cead3f93bc448b463e47bbb
+
+$ git -C /private/tmp/vbp-java-wt push origin feat/vbp-transport-v1-java
+Enumerating objects: ...
+...
+remote: Create a pull request for 'feat/vbp-transport-v1-java' on GitHub by visiting:
+remote:      https://github.com/tiennesdm/veyardb-driver/pull/new/feat/vbp-transport-v1-java
+To https://github.com/tiennesdm/veyardb-driver.git
+ * [new branch]      feat/vbp-transport-v1-java -> feat/vbp-transport-v1-java
 ```
 $ git -C /private/tmp/vbp-java-wt rev-parse HEAD
 <commit-hash>
