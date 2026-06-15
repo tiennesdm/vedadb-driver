@@ -374,21 +374,24 @@ mod tests {
     use tokio::net::TcpListener;
 
     use crate::wire::vbp::frame::frame_bytes;
+    use crate::wire::vbp::AUTH_MECH_SCRAM_SHA_256;
 
     /// A tiny fake VBP server: accept a connection, receive one frame,
     /// and reply with the appropriate response based on opcode.
     async fn spawn_fake_server<F>(handler: F) -> SocketAddr
     where
-        F: Fn(u8, &[u8]) -> Vec<u8> + Send + 'static,
+        F: Fn(u8, &[u8]) -> Vec<u8> + Send + Sync + 'static,
     {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
+        let handler = Arc::new(handler);
         tokio::spawn(async move {
             loop {
                 let (mut sock, _) = match listener.accept().await {
                     Ok(p) => p,
                     Err(_) => break,
                 };
+                let handler = Arc::clone(&handler);
                 tokio::spawn(async move {
                     loop {
                         let mut hdr = [0u8; 8];
@@ -410,7 +413,7 @@ mod tests {
                         }
                         let op = rest[0];
                         let body = &rest[2..];
-                        let reply = handler(op, body);
+                        let reply = (handler)(op, body);
                         if tokio::io::AsyncWriteExt::write_all(&mut sock, &reply)
                             .await
                             .is_err()

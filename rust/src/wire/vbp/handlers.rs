@@ -165,8 +165,8 @@ pub fn assert_all_handlers_covered() {
 mod tests {
     use super::*;
     use crate::wire::vbp::opcodes::{
-        OP_BEGIN, OP_BIND, OP_CANCEL_QUERY, OP_CLIENT_HELLO, OP_CLOSE, OP_COMMIT, OP_COPY_DONE,
-        OP_COPY_FAIL, OP_COPY_IN, OP_PING, OP_ROLLBACK,
+        OP_AUTH_CHALLENGE, OP_BEGIN, OP_BIND, OP_CANCEL_QUERY, OP_CLIENT_HELLO, OP_CLOSE,
+        OP_COMMIT, OP_COPY_DONE, OP_COPY_FAIL, OP_COPY_IN, OP_PING, OP_ROLLBACK,
     };
 
     #[test]
