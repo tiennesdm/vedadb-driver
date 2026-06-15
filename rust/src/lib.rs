@@ -54,7 +54,11 @@ pub mod rw_split;
 pub mod interceptor;
 pub mod cache;
 
-// Re-export commonly used types at the crate root for convenience
+// VedaDB Binary Protocol (VBP) — opt-in wire transport. See `wire::vbp`.
+// Gated behind the `vbp` feature so the rest of the crate builds
+// independently when VBP is not desired.
+#[cfg(feature = "vbp")]
+pub mod wire;
 pub use client::{VedaClient, VedaConfig, VedaConfigBuilder, VedaClientHandle};
 pub use error::VedaError;
 pub use result::{Value, VedaResult, Row};
