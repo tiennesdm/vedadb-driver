@@ -116,7 +116,7 @@ public class VedaFailover {
         for (int i = 0; i < hostPorts.length; i++) {
             String[] hp = hostPorts[i];
             nodeList.add(new FailoverNode(
-                "node-" + i, hp[0], Integer.parseInt(hp[1]));
+                "node-" + i, hp[0], Integer.parseInt(hp[1])));
         }
         this.nodes = new CopyOnWriteArrayList<>(nodeList);
     }
