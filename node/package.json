@@ -13,6 +13,8 @@
   ],
   "scripts": {
     "test": "node tests/test_client.js",
+    "test:vbp": "node --test tests/wire/vbp/",
+    "test:all": "node tests/test_client.js && node --test tests/wire/vbp/",
     "prepublishOnly": "npm test"
   },
   "keywords": [
