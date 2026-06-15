@@ -72,18 +72,24 @@ test('auth SCRAM: rejects malformed server-first', () => {
   assert.throws(() => c.clientFinalMessage('r=x,s=y'), VBPAuthError); // missing i
 });
 
-test('auth SCRAM: cbind_input is gs2_header + "," + client_first_bare', () => {
-  // Spec-correct: c=base64(gs2_header + ',' + client_first_bare)
-  // (not gs2_header + ',' + client_first_bare + ',' + ...)
+test('auth SCRAM: cbind_input is exactly the gs2_header (RFC 5802 §6 pencil vector)', () => {
+  // Per RFC 5802 §6, when the gs2-flag is 'n' (no channel binding),
+  // cbind-data is ABSENT, so cbind-input is just the gs2-header.
+  // The canonical pencil test vector is c=biws, which is
+  // base64("n,,"). Anything else (e.g. "n,,n=user,r=nonce") is a
+  // conformance bug — that would imply a non-'n' gs2-flag.
   const c = new SCRAMClient('alice', 'pw');
-  const cfb = c.clientFirstBare();
   const serverFirst = `r=${c.clientNonce}AAAA,s=c2FsdA==,i=4096`;
   const finalMsg = c.clientFinalMessage(serverFirst);
-  const cPart = finalMsg.split(',')[0].slice(2); // strip 'c='
-  const decoded = Buffer.from(cPart, 'base64').toString('utf-8');
-  // Must be exactly: "n,," + "," + "n=alice,r=<nonce>"
-  assert.ok(decoded.endsWith(',' + cfb), `cbind input ${decoded} should end with ,${cfb}`);
-  assert.ok(decoded.startsWith('n,,'));
+  // finalMsg format: c=<b64>,r=<nonce>,p=<b64>
+  const parts = finalMsg.split(',');
+  assert.strictEqual(parts[0].slice(0, 2), 'c=');
+  const cPart = parts[0].slice(2);
+  // The exact pencil vector from RFC 5802 §5 / §6: c=biws.
+  assert.strictEqual(cPart, 'biws',
+    `cbind channel-binding should be base64("n,,") = "biws", got ${JSON.stringify(cPart)}`);
+  // Defensive: decode and assert the literal string.
+  assert.strictEqual(Buffer.from(cPart, 'base64').toString('utf-8'), 'n,,');
 });
 
 test('auth SCRAM: empty username throws', () => {

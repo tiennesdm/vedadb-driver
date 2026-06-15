@@ -138,12 +138,10 @@ class SCRAMClient {
 
     const clientFirstBare = this.clientFirstBare();
     const gs2Header = _SCRAM_GS2_HEADER;
-    // cbind_input = gs2_header + "," + client_first_bare (RFC 5802 §6)
-    const cbindInput = Buffer.concat([
-      Buffer.from(gs2Header, 'utf-8'),
-      Buffer.from(',', 'utf-8'),
-      Buffer.from(clientFirstBare, 'utf-8'),
-    ]);
+    // RFC 5802 §6: for gs2-flag 'n' (client does not support channel
+    // binding), cbind-data is ABSENT, so cbind-input is just gs2-header.
+    // The pencil test vector is c=biws which is base64("n,,").
+    const cbindInput = Buffer.from(gs2Header, 'utf-8');
     const channelBinding = cbindInput.toString('base64');
     const clientFinalWithoutProof = `c=${channelBinding},r=${combined}`;
     const serverFirstRecon = `r=${combined},s=${saltB64},i=${iters}`;
