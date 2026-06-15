@@ -239,7 +239,7 @@ Python, and other SDKs' shared `feat/vbp-transport-v1*` branches.
 
 ## Commit / push
 
-Branch is ready on `feat/vbp-transport-v1-dotnet`. To push (requires
+Commit: aaa8609 (pushed to origin/feat/vbp-transport-v1-dotnet)
 credentials the agent doesn't have):
 
 ```bash
