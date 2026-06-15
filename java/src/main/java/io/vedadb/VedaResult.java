@@ -17,6 +17,24 @@ public class VedaResult {
     public String getMessage() { return message != null ? message : rowCount + " rows"; }
 
     /**
+     * Return rows as a list of column-name → value maps.
+     * Added for ChangeStream and any other consumer that needs keyed access
+     * to result rows. Returns an empty list if columns/rows are not set.
+     */
+    public List<Map<String, Object>> toDicts() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (rows == null || columns == null) return out;
+        for (List<String> row : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            for (int i = 0; i < columns.size() && i < row.size(); i++) {
+                m.put(columns.get(i), row.get(i));
+            }
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
      * Parse a JSON response from VedaDB.
      * Simple JSON parser (no external dependencies).
      */

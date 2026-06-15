@@ -1,10 +1,10 @@
 package io.vedadb;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for VedaAsyncClient.
