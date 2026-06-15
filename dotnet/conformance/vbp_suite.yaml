@@ -1,0 +1,1346 @@
+# drivers/conformance/vbp_suite.yaml — VBP (VedaDB Binary Protocol) v1
+# conformance test manifest.
+#
+# This is the SINGLE SOURCE OF TRUTH for VBP v1 conformance. Every
+# language driver (Python, Node, Go, Java, Rust, .NET, Ruby, PHP) runs
+# the same test cases against any v1 server. The opcodes, type IDs,
+# and frame layouts are defined in the upstream spec:
+#
+#   tiiennesdm/vedadb-engine  branch feat/vbp-wire-spec
+#   file VBP_SPEC.md  (commit ba2a608)
+#
+# The reference VBP server (used to run the Go harness in CI) lives
+# on branch feat/vbp-wire-v1 in the same repo, at
+# internal/wire/vbp/{frame,client,server,types,auth}.go.
+#
+# A test passes iff the driver's actual wire output matches `expect`
+# to the precision noted in the comment above each block. The
+# harness in conformance/harness/<lang>/ loads this file, runs each
+# test, and emits a JUnit XML report. Categories the driver has not
+# yet implemented MUST be reported as SKIP with a clear reason.
+#
+# Test IDs are stable. Drivers MUST NOT renumber existing tests;
+# new tests may be added above id 9999.
+
+version: 2
+suite: vbp-conformance-v1
+vbp_port: 6380          # default; tests may override via VBP_PORT env
+vbp_spec_ref: "https://github.com/tiennesdm/vedadb-engine/blob/feat/vbp-wire-spec/VBP_SPEC.md"
+
+# ---------------------------------------------------------------------------
+# connect — TCP connect + minimal handshake
+# ---------------------------------------------------------------------------
+
+tests:
+
+  - id: 1001
+    name: connect_plain_tcp
+    category: connect
+    description: "Open a plain TCP connection to the VBP port. The server must not require TLS at the transport layer for this test."
+    operation:
+      kind: connect
+      params: { tls: false, address: "$VBP_ADDR" }
+    expect: { ok: true, server_banner_magic: "VDB" }
+
+  - id: 1002
+    name: connect_bad_magic_closes
+    category: connect
+    description: "Send a frame with magic != VDB. Per §2 framing rules, the server MUST close the connection."
+    operation:
+      kind: connect_then_send
+      params:
+        bytes: "00 00 00 02 00 00 00 00 00 00"   # 10 bytes, magic=0x000000
+    expect: { ok: false, connection_closed: true }
+
+  - id: 1003
+    name: connect_payload_too_small
+    category: connect
+    description: "Send a frame with payload_length < 2. Server MUST close."
+    operation:
+      kind: connect_then_send
+      params:
+        # 8-byte header claiming 1-byte payload + 1-byte payload = 9 bytes total
+        bytes: "56 44 42 01 00 00 00 01 00"
+    expect: { ok: false, connection_closed: true }
+
+  - id: 1004
+    name: connect_truncated_frame
+    category: connect
+    description: "Send a frame with the right magic but truncated body. Server must NOT process it; client must reconnect cleanly."
+    operation:
+      kind: connect_then_send
+      params:
+        # header says 10-byte payload, only 4 bytes follow
+        bytes: "56 44 42 0A 00 00 00 01 00 00 00 00"
+        truncation_at: 12
+    expect: { ok: false, recoverable_reconnect: true }
+
+  - id: 1005
+    name: connect_seq_wrap
+    category: connect
+    description: "Pipelining: with seq wrapping at 256, after 256 in-flight requests the client MUST NOT have two in flight with the same seq."
+    operation:
+      kind: pipelined_send
+      params: { count: 300, max_in_flight: 1, expect_acks: 300 }
+    expect: { ok: true, ack_count: 300 }
+
+  # -------------------------------------------------------------------------
+  # hello — CLIENT_HELLO / SERVER_READY
+  # -------------------------------------------------------------------------
+
+  - id: 1010
+    name: hello_client_hello_v1
+    category: hello
+    description: "Send CLIENT_HELLO with protocol_version=1. Server must respond with SERVER_READY."
+    operation:
+      kind: send_frame
+      opcode: 0x01
+      body:
+        protocol_version: 1
+        client_flags: 0
+        username: "test_user"
+        database: "test_db"
+        actor_kind: 0
+        actor_id: "ci-runner"
+    expect:
+      ok: true
+      response_opcode: 0x02
+      server_version_ge: 0x000A0000     # v10.0.0
+      server_caps_dev_mode: optional    # bit 0 of caps
+
+  - id: 1011
+    name: hello_wrong_protocol_version
+    category: hello
+    description: "Send CLIENT_HELLO with protocol_version=99. Server must respond with ERROR sqlstate 0A000."
+    operation:
+      kind: send_frame
+      opcode: 0x01
+      body: { protocol_version: 99, client_flags: 0, username: "", database: "", actor_kind: 0, actor_id: "" }
+    expect:
+      ok: false
+      response_opcode: 0x0D
+      sqlstate: "0A000"
+
+  - id: 1012
+    name: hello_with_actor_kind_service
+    category: hello
+    description: "CLIENT_HELLO with actor_kind=1 (service). Server must accept without error."
+    operation:
+      kind: send_frame
+      opcode: 0x01
+      body: { protocol_version: 1, client_flags: 0, username: "svc", database: "", actor_kind: 1, actor_id: "svc-1" }
+    expect: { ok: true, response_opcode: 0x02 }
+
+  - id: 1013
+    name: hello_with_long_username
+    category: hello
+    description: "CLIENT_HELLO with a 4 KiB username. Server must handle it (length-prefixed, no truncation)."
+    operation:
+      kind: send_frame
+      opcode: 0x01
+      body: { protocol_version: 1, client_flags: 0, username_repeat: 4096, database: "", actor_kind: 0, actor_id: "" }
+    expect: { ok: true, response_opcode: 0x02 }
+
+  - id: 1014
+    name: hello_announces_caps
+    category: hello
+    description: "SERVER_READY must carry a server_caps u32; client records the cap bits it cares about."
+    operation:
+      kind: connect_and_capture
+      save: server_caps
+    expect: { ok: true, captured_caps: int }
+
+  # -------------------------------------------------------------------------
+  # auth — PLAIN + SCRAM-SHA-256 + edge cases
+  # -------------------------------------------------------------------------
+
+  - id: 1020
+    name: auth_no_auth_dev_mode
+    category: auth
+    description: "With dev-mode cap bit set, server should send AUTH_OK immediately (no AUTH_CHALLENGE)."
+    operation:
+      kind: handshake
+      params: { mechanism: "none", user: "admin", pass: "" }
+    expect: { ok: true, auth_opcode: 0x05, session_token_nonzero: true }
+
+  - id: 1021
+    name: auth_plain_success
+    category: auth
+    description: "PLAIN auth with valid credentials. Server must accept and return a session_token."
+    operation:
+      kind: handshake
+      params: { mechanism: "plain", user: "admin", pass: "TestPassword123!" }
+    expect: { ok: true, session_token_nonzero: true, expires_at_future: true }
+
+  - id: 1022
+    name: auth_plain_wrong_password
+    category: auth
+    description: "PLAIN auth with wrong password. Server must respond with ERROR sqlstate 28000."
+    operation:
+      kind: handshake
+      params: { mechanism: "plain", user: "admin", pass: "wrong" }
+    expect: { ok: false, sqlstate: "28000", message_contains: "auth" }
+
+  - id: 1023
+    name: auth_scram_sha256_roundtrip
+    category: auth
+    description: "Full SCRAM-SHA-256 conversation per §6.2. Client validates ServerSignature."
+    operation:
+      kind: handshake
+      params: { mechanism: "scram-sha-256", user: "admin", pass: "TestPassword123!", verify_server_signature: true }
+    expect: { ok: true, server_signature_verified: true, session_token_nonzero: true }
+
+  - id: 1024
+    name: auth_scram_sha256_bad_proof
+    category: auth
+    description: "SCRAM-SHA-256 with a wrong client_proof. Server must respond with ERROR 28000."
+    operation:
+      kind: handshake
+      params: { mechanism: "scram-sha-256", user: "admin", pass: "wrong", force_bad_proof: true }
+    expect: { ok: false, sqlstate: "28000" }
+
+  - id: 1025
+    name: auth_token_single_use
+    category: auth
+    description: "Opening a new TCP connection with a previously-issued session_token MUST NOT bypass auth (per §6.4)."
+    operation:
+      kind: handshake
+      params: { mechanism: "plain", user: "admin", pass: "TestPassword123!", reuse_token_on_new_conn: true }
+    expect: { ok: false, auth_required: true }
+
+  - id: 1026
+    name: auth_response_wrong_mechanism
+    category: auth
+    description: "Send AUTH_RESPONSE with mechanism=0xFF. Server must return ERROR 0A000."
+    operation:
+      kind: handshake
+      params: { mechanism: "plain", user: "admin", pass: "TestPassword123!", force_response_mechanism: 255 }
+    expect: { ok: false, sqlstate: "0A000" }
+
+  - id: 1027
+    name: auth_request_after_auth_ok
+    category: auth
+    description: "After AUTH_OK, sending a second AUTH_RESPONSE must produce ERROR 0A000 (re-handshake requires server support)."
+    operation:
+      kind: handshake
+      params: { mechanism: "plain", user: "admin", pass: "TestPassword123!", send_duplicate_response: true }
+    expect: { ok: false, sqlstate: "0A000" }
+
+  # -------------------------------------------------------------------------
+  # query — QUERY opcode + VedaQL text + binary params
+  # -------------------------------------------------------------------------
+
+  - id: 1030
+    name: query_select_one
+    category: query
+    description: "Run SELECT 1; with no params. Must return one row."
+    operation:
+      kind: query
+      sql: "SELECT 1 AS n;"
+      params: []
+    expect:
+      ok: true
+      row_count: 1
+      columns: ["n"]
+      rows: [["1"]]
+
+  - id: 1031
+    name: query_with_int_param
+    category: query
+    description: "Run SELECT ? AS x with a T_INT4 parameter bound to 42."
+    operation:
+      kind: query
+      sql: "SELECT $1 AS x;"
+      params: [ { type_id: 23, value: 42 } ]
+    expect:
+      ok: true
+      rows: [["42"]]
+
+  - id: 1032
+    name: query_with_text_param
+    category: query
+    description: "Run SELECT ? with a T_TEXT parameter bound to a UTF-8 string with non-ASCII chars."
+    operation:
+      kind: query
+      sql: "SELECT $1::text AS s;"
+      params: [ { type_id: 25, value: "héllo 日本語 🚀" } ]
+    expect:
+      ok: true
+      rows: [["héllo 日本語 🚀"]]
+
+  - id: 1033
+    name: query_with_null_param
+    category: query
+    description: "Bind a T_INT4 NULL. Server must return a NULL value in the result column."
+    operation:
+      kind: query
+      sql: "SELECT $1 AS x;"
+      params: [ { type_id: 23, null: true } ]
+    expect:
+      ok: true
+      rows: [["NULL"]]
+
+  - id: 1034
+    name: query_with_bool_param
+    category: query
+    description: "Bind a T_BOOL true. Result must round-trip."
+    operation:
+      kind: query
+      sql: "SELECT $1::bool AS b;"
+      params: [ { type_id: 16, value: true } ]
+    expect: { ok: true, rows: [["true"]] }
+
+  - id: 1035
+    name: query_with_float8_param
+    category: query
+    description: "Bind T_FLOAT8 = 3.14159 with full IEEE-754 precision."
+    operation:
+      kind: query
+      sql: "SELECT $1::float8 AS f;"
+      params: [ { type_id: 701, value: 3.14159 } ]
+    expect: { ok: true, rows: [["3.14159"]] }
+
+  - id: 1036
+    name: query_with_bytea_param
+    category: query
+    description: "Bind T_BYTEA with raw bytes containing a NUL."
+    operation:
+      kind: query
+      sql: "SELECT length($1::bytea) AS len;"
+      params: [ { type_id: 17, value_hex: "DEADBEEF00FF" } ]
+    expect: { ok: true, rows: [["6"]] }
+
+  - id: 1037
+    name: query_syntax_error
+    category: query
+    description: "Run a syntactically broken query. Server must return ERROR sqlstate 42601 with a non-zero position."
+    operation:
+      kind: query
+      sql: "SELEKT 1;"
+      params: []
+    expect:
+      ok: false
+      sqlstate: "42601"
+      position_gt: 0
+
+  - id: 1038
+    name: query_duplicate_key
+    category: query
+    description: "Insert a duplicate primary key. Server must return ERROR sqlstate 23505."
+    setup:
+      - "CREATE TABLE conf_q1038 (id INT PRIMARY KEY) ENGINE structured;"
+    operation:
+      kind: query
+      sql: "INSERT INTO conf_q1038 (id) VALUES (1), (1);"
+      params: []
+    expect: { ok: false, sqlstate: "23505" }
+    teardown: ["DROP TABLE conf_q1038;"]
+
+  - id: 1039
+    name: query_many_params
+    category: query
+    description: "Bind 100 T_INT4 parameters in a single QUERY. Server must accept."
+    operation:
+      kind: query
+      sql: "SELECT count(*) FROM unnest($1::int[]) AS x;"
+      params: [ { type_id: 2277, value: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } ]
+    expect: { ok: true, rows: [["10"]] }
+
+  # -------------------------------------------------------------------------
+  # result — DATA_CHUNK + ROWS_FINISHED + COMMAND_COMPLETE shape
+  # -------------------------------------------------------------------------
+
+  - id: 1040
+    name: result_data_chunk_header
+    category: result
+    description: "DATA_CHUNK must have u32 chunk_id, u32 row_count, u16 col_count, then columns."
+    operation:
+      kind: query
+      sql: "SELECT 1 AS a, 'x' AS b;"
+      params: []
+    expect: { ok: true, data_chunk_chunk_id_nonzero: true, row_count: 1, col_count: 2 }
+
+  - id: 1041
+    name: result_rows_finished_present
+    category: result
+    description: "After DATA_CHUNK for a SELECT, server must emit ROWS_FINISHED with rows_affected and a command_tag."
+    operation:
+      kind: query
+      sql: "SELECT 1 AS a;"
+      params: []
+    expect: { ok: true, rows_finished_present: true, command_tag_contains: "SELECT" }
+
+  - id: 1042
+    name: result_command_complete_idle
+    category: result
+    description: "After a non-txn query, COMMAND_COMPLETE status must be 0 (idle)."
+    operation:
+      kind: query
+      sql: "SELECT 1;"
+      params: []
+    expect: { ok: true, command_complete_status: 0 }
+
+  - id: 1043
+    name: result_null_bitmap
+    category: result
+    description: "For a column with one NULL row, the null_bitmap must mark bit 0 = 1."
+    operation:
+      kind: query
+      sql: "SELECT NULL::int AS x;"
+      params: []
+    expect: { ok: true, null_in_column: 0 }
+
+  - id: 1044
+    name: result_zero_rows
+    category: result
+    description: "An empty result set must emit DATA_CHUNK with row_count=0 and a null_bitmap_byte_count of 0."
+    operation:
+      kind: query
+      sql: "SELECT 1 AS x WHERE 1=0;"
+      params: []
+    expect: { ok: true, row_count: 0, null_bitmap_byte_count: 0 }
+
+  - id: 1045
+    name: result_large_rowset
+    category: result
+    description: "A result with 10 000 rows must fit in a single DATA_CHUNK unless the server opts to stream."
+    operation:
+      kind: query
+      sql: "SELECT generate_series(1, 10000) AS n;"
+      params: []
+    expect: { ok: true, row_count: 10000 }
+
+  - id: 1046
+    name: result_affected_rows_in_rows_finished
+    category: result
+    description: "After an INSERT 5 rows, ROWS_FINISHED.rows_affected must be 5."
+    setup:
+      - "CREATE TABLE conf_r1046 (id INT PRIMARY KEY) ENGINE structured;"
+    operation:
+      kind: query
+      sql: "INSERT INTO conf_r1046 (id) VALUES (1), (2), (3), (4), (5);"
+      params: []
+    expect: { ok: true, rows_affected: 5 }
+    teardown: ["DROP TABLE conf_r1046;"]
+
+  - id: 1047
+    name: result_exec_time_us_present
+    category: result
+    description: "ROWS_FINISHED.exec_time_us must be present (any non-negative u32)."
+    operation:
+      kind: query
+      sql: "SELECT 1;"
+      params: []
+    expect: { ok: true, exec_time_us_ge: 0 }
+
+  - id: 1048
+    name: result_int8_min_max
+    category: result
+    description: "T_INT8 round-trip for INT64_MIN and INT64_MAX (boundary values)."
+    operation:
+      kind: query
+      sql: "SELECT -9223372036854775808::int8 AS lo, 9223372036854775807::int8 AS hi;"
+      params: []
+    expect: { ok: true, rows: [["-9223372036854775808", "9223372036854775807"]] }
+
+  - id: 1049
+    name: result_int4_min_max
+    category: result
+    description: "T_INT4 round-trip for INT32_MIN and INT32_MAX (boundary values)."
+    operation:
+      kind: query
+      sql: "SELECT -2147483648::int4 AS lo, 2147483647::int4 AS hi;"
+      params: []
+    expect: { ok: true, rows: [["-2147483648", "2147483647"]] }
+
+  # -------------------------------------------------------------------------
+  # txn — BEGIN / COMMIT / ROLLBACK / SAVEPOINT
+  # -------------------------------------------------------------------------
+
+  - id: 1050
+    name: txn_commit_persists
+    category: txn
+    description: "INSERT in a BEGIN/COMMIT block must persist."
+    setup: ["CREATE TABLE conf_tx1050 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps: ["BEGIN;", "INSERT INTO conf_tx1050 (id) VALUES (1);", "COMMIT;"]
+      verify: "SELECT count(*) FROM conf_tx1050;"
+    expect: { ok: true, verify_equals: "1" }
+    teardown: ["DROP TABLE conf_tx1050;"]
+
+  - id: 1051
+    name: txn_rollback_undoes
+    category: txn
+    description: "INSERT in a BEGIN/ROLLBACK block must be discarded."
+    setup: ["CREATE TABLE conf_tx1051 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps: ["BEGIN;", "INSERT INTO conf_tx1051 (id) VALUES (1);", "ROLLBACK;"]
+      verify: "SELECT count(*) FROM conf_tx1051;"
+    expect: { ok: true, verify_equals: "0" }
+    teardown: ["DROP TABLE conf_tx1051;"]
+
+  - id: 1052
+    name: txn_savepoint_partial_rollback
+    category: txn
+    description: "SAVEPOINT + ROLLBACK TO must undo only the post-savepoint writes."
+    setup: ["CREATE TABLE conf_tx1052 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps:
+        - "BEGIN;"
+        - "INSERT INTO conf_tx1052 (id) VALUES (1);"
+        - "SAVEPOINT sp1;"
+        - "INSERT INTO conf_tx1052 (id) VALUES (2);"
+        - "ROLLBACK TO sp1;"
+        - "COMMIT;"
+      verify: "SELECT count(*) FROM conf_tx1052;"
+    expect: { ok: true, verify_equals: "1" }
+    teardown: ["DROP TABLE conf_tx1052;"]
+
+  - id: 1053
+    name: txn_in_txn_flag
+    category: txn
+    description: "Inside an open transaction, the IN_TXN flag (bit 1 of flags) must be settable on subsequent requests."
+    setup: ["CREATE TABLE conf_tx1053 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn_with_flags
+      steps:
+        - { sql: "BEGIN;",                flags: 0x00 }
+        - { sql: "INSERT INTO conf_tx1053 (id) VALUES (1);", flags: 0x02 }
+        - { sql: "COMMIT;",               flags: 0x02 }
+      verify: "SELECT count(*) FROM conf_tx1053;"
+    expect: { ok: true, verify_equals: "1" }
+    teardown: ["DROP TABLE conf_tx1053;"]
+
+  - id: 1054
+    name: txn_idle_after_commit
+    category: txn
+    description: "After COMMIT, COMMAND_COMPLETE must report status 0 (idle)."
+    setup: ["CREATE TABLE conf_tx1054 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps: ["BEGIN;", "INSERT INTO conf_tx1054 (id) VALUES (1);", "COMMIT;"]
+    expect: { ok: true, command_complete_status: 0 }
+    teardown: ["DROP TABLE conf_tx1054;"]
+
+  - id: 1055
+    name: txn_idle_after_rollback
+    category: txn
+    description: "After ROLLBACK, COMMAND_COMPLETE must report status 0 (idle), not 2 (in_error)."
+    operation:
+      kind: txn
+      steps: ["BEGIN;", "ROLLBACK;"]
+    expect: { ok: true, command_complete_status: 0 }
+
+  - id: 1056
+    name: txn_command_complete_in_error_on_failed_insert
+    category: txn
+    description: "A failed INSERT inside a transaction must emit COMMAND_COMPLETE status 2 (in_error)."
+    setup: ["CREATE TABLE conf_tx1056 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps:
+        - "BEGIN;"
+        - "INSERT INTO conf_tx1056 (id) VALUES (1);"
+        - "INSERT INTO conf_tx1056 (id) VALUES (1);"   # duplicate
+    expect: { ok: false, sqlstate: "23505", command_complete_status: 2 }
+    teardown: ["DROP TABLE conf_tx1056;"]
+
+  # -------------------------------------------------------------------------
+  # vector — T_VECTOR_F32 / F16 / SPARSE / EMBEDDING / QUANT / BINARY
+  # -------------------------------------------------------------------------
+
+  - id: 1060
+    name: vector_f32_roundtrip
+    category: vector
+    description: "T_VECTOR_F32 (5000) round-trip: dim=4, values [0.1, 0.2, 0.3, 0.4]."
+    operation:
+      kind: ext_query
+      ext_op: 0x0001   # VEC_BULK_INSERT
+      body:
+        vectors: [ { dim: 4, values: [0.1, 0.2, 0.3, 0.4] } ]
+    expect: { ok: true, ack_opcode: 0x0B, rows_affected: 1 }
+
+  - id: 1061
+    name: vector_f16_roundtrip
+    category: vector
+    description: "T_VECTOR_F16 (5001) round-trip with half-precision values."
+    operation:
+      kind: ext_query
+      ext_op: 0x0001
+      body: { vectors: [ { dim: 4, values_f16: [1.0, 2.0, 3.0, 4.0] } ] }
+    expect: { ok: true, round_trip_loss: le_0.01 }
+
+  - id: 1062
+    name: vector_sparse_roundtrip
+    category: vector
+    description: "T_SPARSE_VEC (5010) round-trip with 3 non-zero entries."
+    operation:
+      kind: ext_query
+      ext_op: 0x0001
+      body: { sparse: [ { nnz: 3, indices: [0, 5, 100], values: [1.0, 2.0, 3.0] } ] }
+    expect: { ok: true, rows_affected: 1 }
+
+  - id: 1063
+    name: vector_embedding_roundtrip
+    category: vector
+    description: "T_EMBEDDING (5020) with model_id=42 and dim=128 quantised."
+    operation:
+      kind: ext_query
+      ext_op: 0x0001
+      body: { embeddings: [ { model_id: 42, dim: 128, quant_bytes_hex: "00FF00FF" } ] }
+    expect: { ok: true, ack_present: true }
+
+  - id: 1064
+    name: vector_quant_int8_roundtrip
+    category: vector
+    description: "T_QUANT_VEC (5030) with quant_kind=0 (INT8)."
+    operation:
+      kind: ext_query
+      ext_op: 0x0001
+      body: { quant_vec: [ { quant_kind: 0, dim: 4, values_i8: [0, 64, -64, 127] } ] }
+    expect: { ok: true, rows_affected: 1 }
+
+  - id: 1065
+    name: vector_binary_roundtrip
+    category: vector
+    description: "T_BINARY_VEC (5040) with bit_count=128 (16 packed bytes)."
+    operation:
+      kind: ext_query
+      ext_op: 0x0001
+      body: { binary_vec: [ { bit_count: 128, bytes_hex: "DEADBEEFCAFEBABE12345678ABCDEF01" } ] }
+    expect: { ok: true, rows_affected: 1 }
+
+  - id: 1066
+    name: vector_bulk_search
+    category: vector
+    description: "VEC_BULK_SEARCH (ext_op 0x0002) returns top-K nearest vectors."
+    operation:
+      kind: ext_query
+      ext_op: 0x0002
+      body: { query: { dim: 4, values: [0.1, 0.2, 0.3, 0.4] }, k: 5 }
+    expect: { ok: true, result_type_id: 5000, hit_count: 5 }
+
+  - id: 1067
+    name: vector_unsupported_in_legacy_query
+    category: vector
+    description: "A relational-only server must return ERROR 0A000 if a vector param is bound to QUERY."
+    operation:
+      kind: query
+      sql: "SELECT $1::vector;"
+      params: [ { type_id: 5000, value: { dim: 2, values: [1.0, 2.0] } } ]
+    expect: { ok: false, sqlstate: "0A000" }
+
+  # -------------------------------------------------------------------------
+  # document — T_DOC / T_DOC_PATH
+  # -------------------------------------------------------------------------
+
+  - id: 1070
+    name: document_flat_roundtrip
+    category: document
+    description: "T_DOC (5100) with two fields: name (T_TEXT) and age (T_INT4)."
+    operation:
+      kind: ext_query
+      ext_op: 0x0008   # DOC_BULK_PUT
+      body: { docs: [ { fields: [ { name: "name", type_id: 25, value: "alice" }, { name: "age", type_id: 23, value: 30 } ] } ] }
+    expect: { ok: true, rows_affected: 1 }
+
+  - id: 1071
+    name: document_nested_roundtrip
+    category: document
+    description: "T_DOC nested inside another T_DOC (recursive envelope per §5.4)."
+    operation:
+      kind: ext_query
+      ext_op: 0x0008
+      body:
+        docs:
+          - fields:
+              - { name: "user", type_id: 5100, value: { fields: [ { name: "id", type_id: 23, value: 1 } ] } }
+              - { name: "ts",  type_id: 1114, value: 0 }
+    expect: { ok: true, rows_affected: 1 }
+
+  - id: 1072
+    name: document_path_roundtrip
+    category: document
+    description: "T_DOC_PATH (5101) with seg_count=3."
+    operation:
+      kind: ext_query
+      ext_op: 0x0008
+      body: { paths: [ { seg_count: 3, segments: ["a", "b", "c"] } ] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1073
+    name: document_with_null_field
+    category: document
+    description: "T_DOC with one field set to NULL via null_tag=0 in the input envelope."
+    operation:
+      kind: ext_query
+      ext_op: 0x0008
+      body: { docs: [ { fields: [ { name: "x", type_id: 25, null: true } ] } ] }
+    expect: { ok: true, rows_affected: 1 }
+
+  # -------------------------------------------------------------------------
+  # kv — T_KV_KEY / T_KV_VALUE / T_KV_TOMBSTONE
+  # -------------------------------------------------------------------------
+
+  - id: 1080
+    name: kv_put_get
+    category: kv
+    description: "T_KV_KEY (5200) + T_KV_VALUE (5201) put then get via ext_op 0x0009 (KV_BULK_GET)."
+    operation:
+      kind: ext_query
+      ext_op: 0x0009
+      body: { put: [ { key_hex: "666F6F", value_hex: "626172" } ], get: [ { key_hex: "666F6F" } ] }
+    expect: { ok: true, get_result_value_hex: "626172" }
+
+  - id: 1081
+    name: kv_tombstone_version
+    category: kv
+    description: "T_KV_TOMBSTONE (5202) is a 16-byte fixed type with version + ts."
+    operation:
+      kind: encode_decode
+      type_id: 5202
+      value: { version: 1, tombstone_ts_unix_ms: 1700000000000 }
+    expect: { ok: true, body_byte_count: 16, round_trip_lossless: true }
+
+  - id: 1082
+    name: kv_large_key
+    category: kv
+    description: "T_KV_KEY with 1 MiB key bytes. Server must accept (subject to max_payload_bytes)."
+    operation:
+      kind: ext_query
+      ext_op: 0x0009
+      body: { put: [ { key_size: 1048576, value_size: 0 } ] }
+    expect: { ok: true, rows_affected: 1 }
+
+  - id: 1083
+    name: kv_get_missing_returns_null
+    category: kv
+    description: "GET on a missing key returns NULL in the result column."
+    operation:
+      kind: ext_query
+      ext_op: 0x0009
+      body: { get: [ { key_hex: "6E6F745F7468657265" } ] }
+    expect: { ok: true, result_null: true }
+
+  # -------------------------------------------------------------------------
+  # graph — T_NODE / T_EDGE / T_PATH / T_TRAVERSAL + ext_ops
+  # -------------------------------------------------------------------------
+
+  - id: 1090
+    name: graph_node_roundtrip
+    category: graph
+    description: "T_NODE (5300) with 2 labels."
+    operation:
+      kind: encode_decode
+      type_id: 5300
+      value: { node_id: 1, labels: ["Person", "Employee"] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1091
+    name: graph_edge_roundtrip
+    category: graph
+    description: "T_EDGE (5301) is fixed 38 bytes: edge_id, src, dst, kind, weight, ts."
+    operation:
+      kind: encode_decode
+      type_id: 5301
+      value: { edge_id: 1, src: 10, dst: 20, kind: 0, weight: 1.5, ts: 1700000000000 }
+    expect: { ok: true, body_byte_count: 38, round_trip_lossless: true }
+
+  - id: 1092
+    name: graph_bfs_ext_op
+    category: graph
+    description: "GRAPH_BFS (ext_op 0x0003) returns a T_PATH (5302) of nodes."
+    operation:
+      kind: ext_query
+      ext_op: 0x0003
+      body: { start_node: 1, max_depth: 3 }
+    expect: { ok: true, result_type_id: 5302 }
+
+  - id: 1093
+    name: graph_path_ext_op
+    category: graph
+    description: "GRAPH_PATH (ext_op 0x0004) returns a single shortest path between two nodes."
+    operation:
+      kind: ext_query
+      ext_op: 0x0004
+      body: { src: 1, dst: 7 }
+    expect: { ok: true, result_type_id: 5302, found: optional }
+
+  - id: 1094
+    name: graph_traversal_state_roundtrip
+    category: graph
+    description: "T_GRAPH_TRAVERSAL_STATE (5303) is 16 bytes fixed."
+    operation:
+      kind: encode_decode
+      type_id: 5303
+      value: { depth: 5, frontier_count: 100, cursor: 12345 }
+    expect: { ok: true, body_byte_count: 16 }
+
+  # -------------------------------------------------------------------------
+  # ts — time-series: T_TSID / T_TS_SAMPLE / T_TS_RANGE + ext_ops
+  # -------------------------------------------------------------------------
+
+  - id: 1100
+    name: ts_tsid_roundtrip
+    category: ts
+    description: "T_TSID (5400) with 2 tags."
+    operation:
+      kind: encode_decode
+      type_id: 5400
+      value: { measurement_id: 1, tags: [ { name: "host", value: "h1" }, { name: "region", value: "us-west" } ] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1101
+    name: ts_sample_roundtrip
+    category: ts
+    description: "T_TS_SAMPLE (5401) with value_type_id=701 (FLOAT8)."
+    operation:
+      kind: encode_decode
+      type_id: 5401
+      value: { ts_unix_ms: 1700000000000, value_type_id: 701, value: 3.14 }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1102
+    name: ts_range_fixed_17_bytes
+    category: ts
+    description: "T_TS_RANGE (5402) is fixed 17 bytes (from, to, closed_open)."
+    operation:
+      kind: encode_decode
+      type_id: 5402
+      value: { from_unix_ms: 0, to_unix_ms: 1700000000000, closed_open: 0 }
+    expect: { ok: true, body_byte_count: 17 }
+
+  - id: 1103
+    name: ts_ingest_ext_op
+    category: ts
+    description: "TS_INGEST (ext_op 0x0005) accepts a batch of T_TS_SAMPLE values."
+    operation:
+      kind: ext_query
+      ext_op: 0x0005
+      body: { samples: [ { ts: 1700000000000, value: 1.0 }, { ts: 1700000060000, value: 2.0 } ] }
+    expect: { ok: true, rows_affected: 2 }
+
+  - id: 1104
+    name: ts_range_query_ext_op
+    category: ts
+    description: "TS_RANGE_QUERY (ext_op 0x0006) returns samples in a time window."
+    operation:
+      kind: ext_query
+      ext_op: 0x0006
+      body: { tsid: 1, from_unix_ms: 0, to_unix_ms: 1700000100000, closed_open: 0 }
+    expect: { ok: true, result_type_id: 5401 }
+
+  # -------------------------------------------------------------------------
+  # geo — T_GEO_POINT / T_GEO_LINESTRING / T_GEO_POLYGON / T_GEO_H3_CELL / T_GEO_S2_CELL
+  # -------------------------------------------------------------------------
+
+  - id: 1110
+    name: geo_point_roundtrip
+    category: geo
+    description: "T_GEO_POINT (5500) is 16 bytes: lat_e7, lon_e7 (degrees × 10^7)."
+    operation:
+      kind: encode_decode
+      type_id: 5500
+      value: { lat_e7: 37747900, lon_e_e7: -122419400 }   # San Francisco
+    expect: { ok: true, body_byte_count: 16 }
+
+  - id: 1111
+    name: geo_linestring_roundtrip
+    category: geo
+    description: "T_GEO_LINESTRING (5501) with 3 points."
+    operation:
+      kind: encode_decode
+      type_id: 5501
+      value: { point_count: 3, points: [ { lat_e7: 0, lon_e_e7: 0 }, { lat_e7: 100, lon_e_e7: 200 }, { lat_e7: 300, lon_e_e7: 400 } ] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1112
+    name: geo_polygon_roundtrip
+    category: geo
+    description: "T_GEO_POLYGON (5502) with 1 ring of 4 points (closed loop)."
+    operation:
+      kind: encode_decode
+      type_id: 5502
+      value: { ring_count: 1, rings: [ { point_count: 4, points: [ { lat_e7: 0, lon_e_e7: 0 }, { lat_e7: 0, lon_e_e7: 100 }, { lat_e7: 100, lon_e_e7: 100 }, { lat_e7: 100, lon_e_e7: 0 } ] } ] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1113
+    name: geo_h3_cell_roundtrip
+    category: geo
+    description: "T_GEO_H3_CELL (5503) is 9 bytes: u8 resolution + u64 h3_index."
+    operation:
+      kind: encode_decode
+      type_id: 5503
+      value: { resolution: 9, h3_index: 617733123019051007 }
+    expect: { ok: true, body_byte_count: 9 }
+
+  - id: 1114
+    name: geo_s2_cell_roundtrip
+    category: geo
+    description: "T_GEO_S2_CELL (5504) is 9 bytes: u8 level + u64 s2_cell_id."
+    operation:
+      kind: encode_decode
+      type_id: 5504
+      value: { level: 12, s2_cell_id: 1234567890 }
+    expect: { ok: true, body_byte_count: 9 }
+
+  - id: 1115
+    name: geo_within_ext_op
+    category: geo
+    description: "GEO_WITHIN (ext_op 0x0007) returns points inside a polygon."
+    operation:
+      kind: ext_query
+      ext_op: 0x0007
+      body: { polygon: { ring_count: 1, rings: [] }, point: { lat_e7: 50000000, lon_e_e7: 50000000 } }
+    expect: { ok: true, result_type_id: 5500, found: optional }
+
+  # -------------------------------------------------------------------------
+  # search — T_SEARCH_DOC / T_SEARCH_HIT / T_ANALYZED_TOKENS
+  # -------------------------------------------------------------------------
+
+  - id: 1120
+    name: search_doc_roundtrip
+    category: search
+    description: "T_SEARCH_DOC (5600) with 2 fields."
+    operation:
+      kind: encode_decode
+      type_id: 5600
+      value: { fields: [ { name: "title", content_hex: "48656C6C6F" }, { name: "body", content_hex: "776F726C64" } ] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1121
+    name: search_hit_roundtrip
+    category: search
+    description: "T_SEARCH_HIT (5601) with 1 snippet."
+    operation:
+      kind: encode_decode
+      type_id: 5601
+      value: { doc_id: 42, score: 0.95, snippets: [ { start: 0, char_len: 5, byte_len: 5, text: "hello" } ] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1122
+    name: search_analyzed_tokens_roundtrip
+    category: search
+    description: "T_ANALYZED_TOKENS (5602) with 3 tokens."
+    operation:
+      kind: encode_decode
+      type_id: 5602
+      value: { tokens: ["foo", "bar", "baz"] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1123
+    name: search_bulk_ext_op
+    category: search
+    description: "SEARCH_BULK (ext_op 0x000A) returns a list of T_SEARCH_HIT values."
+    operation:
+      kind: ext_query
+      ext_op: 0x000A
+      body: { query_text: "hello world", top_k: 10 }
+    expect: { ok: true, result_type_id: 5601, hit_count_le: 10 }
+
+  # -------------------------------------------------------------------------
+  # cross_model — a single result set that returns multiple model types
+  # -------------------------------------------------------------------------
+
+  - id: 1130
+    name: cross_model_vector_plus_relational
+    category: cross_model
+    description: "A single query that joins a relational table to a vector index; result includes a vector column."
+    operation:
+      kind: query
+      sql: "SELECT id, embedding FROM items WHERE embedding <-> $1 LIMIT 5;"
+      params: [ { type_id: 5000, value: { dim: 4, values: [0.1, 0.2, 0.3, 0.4] } } ]
+    expect: { ok: true, column_type_ids_contain: [23, 5000] }
+
+  - id: 1131
+    name: cross_model_doc_in_select
+    category: cross_model
+    description: "A SELECT returning a T_DOC column."
+    operation:
+      kind: query
+      sql: "SELECT profile FROM users WHERE id = 1;"
+      params: []
+    expect: { ok: true, column_type_ids_contain: [5100] }
+
+  - id: 1132
+    name: cross_model_geo_in_where
+    category: cross_model
+    description: "A SELECT with a T_GEO_POINT parameter bound in WHERE."
+    operation:
+      kind: query
+      sql: "SELECT id FROM places WHERE ST_DWithin(location, $1, 1000);"
+      params: [ { type_id: 5500, value: { lat_e7: 37747900, lon_e_e7: -122419400 } } ]
+    expect: { ok: true, ack_present: true }
+
+  - id: 1133
+    name: cross_model_array_of_int
+    category: cross_model
+    description: "T_ARRAY (2277) of T_INT4 (23)."
+    operation:
+      kind: encode_decode
+      type_id: 2277
+      value: { elem_type_id: 23, count: 3, elements: [1, 2, 3] }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1134
+    name: cross_model_jsonb_roundtrip
+    category: cross_model
+    description: "T_JSONB (3802) round-trip with a nested object."
+    operation:
+      kind: encode_decode
+      type_id: 3802
+      value: { json_text: "{\"a\":1,\"b\":[true,null,\"x\"]}" }
+    expect: { ok: true, round_trip_lossless: true }
+
+  - id: 1135
+    name: cross_model_timestamp_us
+    category: cross_model
+    description: "T_TIMESTAMP (1114) is i64 microseconds since 1970-01-01 UTC."
+    operation:
+      kind: encode_decode
+      type_id: 1114
+      value: 1700000000000000
+    expect: { ok: true, body_byte_count: 8, round_trip_lossless: true }
+
+  # -------------------------------------------------------------------------
+  # streaming — STREAM_BEGIN / STREAM_CHUNK / STREAM_END + checksum
+  # -------------------------------------------------------------------------
+
+  - id: 1140
+    name: streaming_basic_no_stream
+    category: streaming
+    description: "A 1-row query must NOT emit STREAM_BEGIN; it fits in one DATA_CHUNK."
+    operation:
+      kind: query
+      sql: "SELECT 1;"
+      params: []
+    expect: { ok: true, stream_begin_emitted: false }
+
+  - id: 1141
+    name: streaming_large_result_uses_stream
+    category: streaming
+    description: "A 1 MiB result set MUST trigger STREAM_BEGIN with expected_total_chunks > 0."
+    operation:
+      kind: query
+      sql: "SELECT repeat('x', 1024) FROM generate_series(1, 1024);"
+      params: []
+    expect: { ok: true, stream_begin_emitted: true, stream_id_nonzero: true }
+
+  - id: 1142
+    name: streaming_chunks_in_offset_order
+    category: streaming
+    description: "STREAM_CHUNK frames must arrive with strictly monotonic offsets."
+    operation:
+      kind: query
+      sql: "SELECT repeat('a', 4096) FROM generate_series(1, 4096);"
+      params: []
+    expect: { ok: true, chunk_offsets_monotonic: true }
+
+  - id: 1143
+    name: streaming_end_with_checksum
+    category: streaming
+    description: "STREAM_END must carry a u32 CRC32C checksum of the concatenated payloads."
+    operation:
+      kind: query
+      sql: "SELECT repeat('q', 2048) FROM generate_series(1, 1024);"
+      params: []
+    expect: { ok: true, stream_end_present: true, checksum_verifies: true }
+
+  - id: 1144
+    name: streaming_backpressure_ping
+    category: streaming
+    description: "PING with BACKPRESSURE flag (bit 0 of PING flags) must receive PONG before throttle applies."
+    operation:
+      kind: streaming_backpressure
+    expect: { ok: true, pong_received_first: true, throttle_after_pong: true }
+
+  - id: 1145
+    name: streaming_payload_size_cap
+    category: streaming
+    description: "A frame with payload_length > server max_payload_bytes must be rejected with ERROR 53300."
+    operation:
+      kind: connect_then_send
+      params:
+        # header claims 16 MiB + 1 byte payload
+        bytes_template: "56 44 42 ${LEN} 00 00 00 00 00 00"
+        fill_bytes: 16777217
+    expect: { ok: false, sqlstate: "53300" }
+
+  # -------------------------------------------------------------------------
+  # cancel — CANCEL opcode + CANCEL response semantics
+  # -------------------------------------------------------------------------
+
+  - id: 1150
+    name: cancel_long_query
+    category: cancel
+    description: "Send CANCEL (0x0E) for a slow in-flight QUERY. Server must respond with ERROR 57014 then COMMAND_COMPLETE."
+    operation:
+      kind: cancel_query
+      params: { query_id: "$INFLIGHT", reason: 0 }
+    expect: { ok: true, sqlstate: "57014", command_complete_status: 2 }
+
+  - id: 1151
+    name: cancel_unknown_query
+    category: cancel
+    description: "CANCEL for a non-existent query_id must produce ERROR with an appropriate sqlstate (server-defined, e.g. 34000)."
+    operation:
+      kind: cancel_query
+      params: { query_id: 0xDEADBEEF, reason: 4 }   # reason=4=other
+    expect: { ok: false, sqlstate_match: "34|42|0A" }
+
+  - id: 1152
+    name: cancel_reason_user
+    category: cancel
+    description: "CANCEL reason=0 (user) is the default for explicit user cancellation."
+    operation:
+      kind: cancel_query
+      params: { query_id: "$INFLIGHT", reason: 0 }
+    expect: { ok: true, reason_logged: 0 }
+
+  - id: 1153
+    name: cancel_reason_checksum
+    category: cancel
+    description: "CANCEL reason=2 (checksum) is the spec's signal for a detected stream checksum mismatch."
+    operation:
+      kind: cancel_query
+      params: { query_id: "$INFLIGHT", reason: 2 }
+    expect: { ok: true, reason_logged: 2 }
+
+  # -------------------------------------------------------------------------
+  # copy — COPY_IN / COPY_DATA / COPY_DONE / COPY_FAIL
+  # -------------------------------------------------------------------------
+
+  - id: 1160
+    name: copy_in_csv_small
+    category: copy
+    description: "COPY_IN with format=0 (CSV) and 100 rows; server must accept and return ROWS_FINISHED.rows_affected=100."
+    operation:
+      kind: copy_in
+      table: "conf_copy1160"
+      col_type_ids: [23, 25]
+      format: 0   # CSV
+      rows: 100
+    expect: { ok: true, rows_affected: 100, command_complete_status: 0 }
+
+  - id: 1161
+    name: copy_in_binary_small
+    category: copy
+    description: "COPY_IN with format=1 (BINARY) and 100 rows."
+    operation:
+      kind: copy_in
+      table: "conf_copy1161"
+      col_type_ids: [23, 25]
+      format: 1   # BINARY
+      rows: 100
+    expect: { ok: true, rows_affected: 100 }
+
+  - id: 1162
+    name: copy_fail_aborts
+    category: copy
+    description: "COPY_FAIL after partial COPY_DATA aborts the COPY; ROWS_FINISHED.rows_affected must be 0 or partial."
+    operation:
+      kind: copy_in
+      table: "conf_copy1162"
+      col_type_ids: [23]
+      format: 0
+      rows: 10
+      fail_after_rows: 5
+      reason: "test abort"
+    expect: { ok: false, sqlstate_match: "5[0-9]|V[0-9]" }
+
+  - id: 1163
+    name: copy_unsupported_format
+    category: copy
+    description: "COPY_IN with format=2 (reserved) must return ERROR 0A000."
+    operation:
+      kind: copy_in
+      table: "conf_copy1163"
+      col_type_ids: [23]
+      format: 2
+      rows: 0
+    expect: { ok: false, sqlstate: "0A000" }
+
+  - id: 1164
+    name: copy_done_empty_body
+    category: copy
+    description: "COPY_DONE is the smallest legal frame (10 bytes total)."
+    operation:
+      kind: send_only
+      opcode: 0x14
+      flags: 0x00
+    expect: { ok: true, total_bytes: 10, payload_length: 2 }
+
+  # -------------------------------------------------------------------------
+  # error — error frame shape, mandatory sqlstates
+  # -------------------------------------------------------------------------
+
+  - id: 1170
+    name: error_sqlstate_42601_syntax
+    category: error
+    description: "Syntax error in VedaQL must produce sqlstate 42601 with a 1-based position."
+    operation:
+      kind: query
+      sql: "BAD SQL HERE;"
+      params: []
+    expect: { ok: false, sqlstate: "42601", position_gt: 0 }
+
+  - id: 1171
+    name: error_sqlstate_28000_auth
+    category: error
+    description: "Auth failure must produce sqlstate 28000."
+    operation:
+      kind: handshake
+      params: { mechanism: "plain", user: "admin", pass: "wrong" }
+    expect: { ok: false, sqlstate: "28000" }
+
+  - id: 1172
+    name: error_sqlstate_23505_duplicate_key
+    category: error
+    description: "Duplicate primary key must produce sqlstate 23505."
+    setup: ["CREATE TABLE conf_e1172 (id INT PRIMARY KEY) ENGINE structured;"]
+    operation:
+      kind: txn
+      steps:
+        - "INSERT INTO conf_e1172 (id) VALUES (1);"
+        - "INSERT INTO conf_e1172 (id) VALUES (1);"
+    expect: { ok: false, sqlstate: "23505" }
+    teardown: ["DROP TABLE conf_e1172;"]
+
+  - id: 1173
+    name: error_sqlstate_53300_too_many_connections
+    category: error
+    description: "Opening more connections than server max must produce sqlstate 53300."
+    operation:
+      kind: open_many_connections
+      count: 5000
+    expect: { ok: false, sqlstate: "53300", connection_closed: true }
+
+  - id: 1174
+    name: error_sqlstate_57014_query_cancelled
+    category: error
+    description: "Cancelled queries must produce sqlstate 57014."
+    operation:
+      kind: cancel_query
+      params: { query_id: "$INFLIGHT", reason: 0 }
+    expect: { ok: false, sqlstate: "57014" }
+
+  - id: 1175
+    name: error_sqlstate_0A000_reserved_opcode
+    category: error
+    description: "Sending reserved opcode 0x1B must produce sqlstate 0A000."
+    operation:
+      kind: send_only
+      opcode: 0x1B
+      flags: 0x00
+    expect: { ok: false, sqlstate: "0A000" }
+
+  - id: 1176
+    name: error_sqlstate_0A000_tls_upgrade_v1
+    category: error
+    description: "TLS_UPGRADE (0x19) is reserved for v2; v1 servers MUST return ERROR 0A000."
+    operation:
+      kind: send_only
+      opcode: 0x19
+      flags: 0x00
+    expect: { ok: false, sqlstate: "0A000" }
+
+  - id: 1177
+    name: error_sqlstate_58000_engine_internal
+    category: error
+    description: "An engine-internal error (e.g. corruption) must produce sqlstate 58000."
+    operation:
+      kind: trigger_internal_error
+    expect: { ok: false, sqlstate: "58000" }
+
+  - id: 1178
+    name: error_has_message_detail_hint
+    category: error
+    description: "ERROR frames must carry message (non-empty), and may carry detail/hint."
+    operation:
+      kind: query
+      sql: "SELEKT 1;"
+      params: []
+    expect: { ok: false, message_nonempty: true, position_present: true }
+
+  - id: 1179
+    name: error_v_prefix_extension
+    category: error
+    description: "VedaDB extension sqlstates start with V; the engine MAY use Vxxxx for engine-specific errors."
+    operation:
+      kind: trigger_vedaql_extension_error
+    expect: { ok: false, sqlstate_match: "^V[0-9A-F]{4}$" }
+
+  # -------------------------------------------------------------------------
+  # tls — TLS at the transport layer (port 6381 or ALPN)
+  # -------------------------------------------------------------------------
+
+  - id: 1180
+    name: tls_opens_on_tls_port
+    category: tls
+    description: "On the TLS port (default 6381), the server must present a TLS handshake."
+    operation:
+      kind: tls_handshake
+      params: { address: "$VBP_TLS_ADDR", sni: "localhost" }
+    expect: { ok: true, tls_version_ge: "1.2" }
+
+  - id: 1181
+    name: tls_untrusted_cert_rejected
+    category: tls
+    description: "Without the right CA, a TLS handshake to the TLS port must fail."
+    operation:
+      kind: tls_handshake
+      params: { address: "$VBP_TLS_ADDR", sni: "localhost", trust_store: "system_default" }
+    expect: { ok: false, error_contains: "certificate" }
+
+  - id: 1182
+    name: tls_upgrade_opcode_v1_rejected
+    category: tls
+    description: "TLS_UPGRADE (0x19) over a plain connection must return ERROR 0A000 (per §3.3, v1 has no in-band upgrade)."
+    operation:
+      kind: send_only
+      opcode: 0x19
+      flags: 0x00
+    expect: { ok: false, sqlstate: "0A000" }
+
+  - id: 1183
+    name: tls_handshake_then_vbp_frames
+    category: tls
+    description: "After a successful TLS handshake, the VBP frame protocol must work end-to-end."
+    operation:
+      kind: full_handshake_over_tls
+    expect: { ok: true, query_select_one_works: true }
+
+  # -------------------------------------------------------------------------
+  # type registry — round-trip every type ID (the 36-ID closed set)
+  # -------------------------------------------------------------------------
+
+  - id: 1190
+    name: type_registry_all_roundtrip
+    category: type_registry
+    description: "Every one of the 36 VBP v1 type IDs (the registry actually contains 36, not 27; see types.go) must round-trip without loss."
+    operation:
+      kind: type_roundtrip
+      type_ids: "all"   # driver iterates vbp.AllTypeIDs
+    expect: { ok: true, all_roundtrip: true, total_count: 36 }
+
+  - id: 1191
+    name: type_registry_unknown_rejected
+    category: type_registry
+    description: "A type_id not in the closed registry must be rejected with ERROR 0A000."
+    operation:
+      kind: query
+      sql: "SELECT $1;"
+      params: [ { type_id: 9999, value: 0 } ]
+    expect: { ok: false, sqlstate: "0A000" }
+
+  - id: 1192
+    name: type_registry_fixed_width_deterministic
+    category: type_registry
+    description: "Fixed-width types (T_INT4, T_INT8, T_FLOAT4, T_FLOAT8, T_BOOL, T_TIMESTAMP) have deterministic on-wire size after the envelope."
+    operation:
+      kind: type_fixed_width_check
+      expected_widths: { 16: 1, 17: "var", 20: 8, 23: 4, 25: "var", 700: 4, 701: 8, 1114: 8, 3802: "var", 2277: "var" }
+    expect: { ok: true, all_match: true }

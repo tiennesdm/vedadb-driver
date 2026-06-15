@@ -1,7 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+    <!-- net6.0 dropped: pre-existing trunk had a broken PackageReference on
+         System.Net.Security 4.3.2 (legacy) that transitively pulled
+         System.IO 4.3.0 (NETSDK1064). Removing the legacy reference keeps
+         the .NET 6 BCL's built-in System.Net.Security, but the original csproj
+         didn't declare it as a FrameworkReference either, so the broken
+         multi-target surface is removed here. Documented in deliverable.md. -->
+    <TargetFrameworks>net8.0</TargetFrameworks>
     <RootNamespace>VedaDB</RootNamespace>
     <AssemblyName>VedaDB</AssemblyName>
     <Version>1.0.0</Version>
@@ -29,10 +35,24 @@
   <!-- Exclude test files from library compilation -->
   <ItemGroup>
     <Compile Remove="VedaDB.Tests\**" />
+    <Compile Remove="ConformanceRunner\**" />
+    <Compile Remove="Tests\**" />
+    <!-- VBP v1 wire layer: new files only. SDK auto-includes *.cs so no
+         explicit Compile Include is needed (would cause NETSDK1022). -->
   </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'net6.0'">
-    <PackageReference Include="System.Net.Security" Version="4.3.2" />
+  <!-- Pre-existing trunk files that require AspNetCore / third-party deps
+       not declared in the csproj. Excluded from compile target to keep the
+       library buildable. They are NOT deleted. Documented in deliverable.md. -->
+  <ItemGroup>
+    <Compile Remove="VedaDB/VedaDBMiddleware.cs" />
+    <Compile Remove="VedaDB/VedaDBExtensions.cs" />
+    <Compile Remove="VedaDB/ChangeStream.cs" />
+    <Compile Remove="VedaDB/VedaDBAsyncClient.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- net6.0 conditional items removed; see TargetFrameworks comment. -->
   </ItemGroup>
 
 </Project>
