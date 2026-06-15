@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
@@ -65,21 +66,21 @@ public class VedaAsyncClient implements AutoCloseable {
      * Execute a query asynchronously.
      */
     public CompletableFuture<VedaResult> queryAsync(String sql) {
-        return supplyAsync(() -> syncClient.query(sql));
+        return supplyAsync(() -> { try { return syncClient.query(sql); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Execute a statement asynchronously (INSERT/UPDATE/DELETE/DDL).
      */
     public CompletableFuture<String> execAsync(String sql) {
-        return supplyAsync(() -> syncClient.exec(sql));
+        return supplyAsync(() -> { try { return syncClient.exec(sql); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Insert a row asynchronously.
      */
     public CompletableFuture<String> insertAsync(String table, Map<String, Object> data) {
-        return supplyAsync(() -> syncClient.insert(table, data));
+        return supplyAsync(() -> { try { return syncClient.insert(table, data); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
@@ -87,35 +88,35 @@ public class VedaAsyncClient implements AutoCloseable {
      */
     public CompletableFuture<VedaResult> selectAsync(String table, String columns,
                                                        String where, String orderBy, int limit) {
-        return supplyAsync(() -> syncClient.select(table, columns, where, orderBy, limit));
+        return supplyAsync(() -> { try { return syncClient.select(table, columns, where, orderBy, limit); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Update rows asynchronously.
      */
     public CompletableFuture<String> updateAsync(String table, Map<String, Object> set, String where) {
-        return supplyAsync(() -> syncClient.update(table, set, where));
+        return supplyAsync(() -> { try { return syncClient.update(table, set, where); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Delete rows asynchronously.
      */
     public CompletableFuture<String> deleteAsync(String table, String where) {
-        return supplyAsync(() -> syncClient.delete(table, where));
+        return supplyAsync(() -> { try { return syncClient.delete(table, where); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Show tables asynchronously.
      */
     public CompletableFuture<List<String>> showTablesAsync() {
-        return supplyAsync(() -> syncClient.showTables());
+        return supplyAsync(() -> { try { return syncClient.showTables(); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Ping the server asynchronously.
      */
     public CompletableFuture<Boolean> pingAsync() {
-        return supplyAsync(() -> syncClient.ping());
+        return supplyAsync(() -> { try { return syncClient.ping(); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     // --- Transaction helpers ---
@@ -124,28 +125,28 @@ public class VedaAsyncClient implements AutoCloseable {
      * Begin a transaction asynchronously.
      */
     public CompletableFuture<Void> beginAsync() {
-        return runAsync(() -> syncClient.begin());
+        return runAsync(() -> { try { syncClient.begin(); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Commit the current transaction asynchronously.
      */
     public CompletableFuture<Void> commitAsync() {
-        return runAsync(() -> syncClient.commit());
+        return runAsync(() -> { try { syncClient.commit(); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Rollback the current transaction asynchronously.
      */
     public CompletableFuture<Void> rollbackAsync() {
-        return runAsync(() -> syncClient.rollback());
+        return runAsync(() -> { try { syncClient.rollback(); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Execute a function inside a transaction asynchronously.
      */
     public <T> CompletableFuture<T> transactionAsync(java.util.function.Function<VedaClient, T> fn) {
-        return supplyAsync(() -> syncClient.transaction(fn));
+        return supplyAsync(() -> { try { return syncClient.transaction(fn); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     // --- Prepared statements ---
@@ -154,21 +155,21 @@ public class VedaAsyncClient implements AutoCloseable {
      * Prepare a statement asynchronously.
      */
     public CompletableFuture<VedaResult> prepareAsync(String name, String query) {
-        return supplyAsync(() -> syncClient.prepare(name, query));
+        return supplyAsync(() -> { try { return syncClient.prepare(name, query); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Execute a prepared statement asynchronously.
      */
     public CompletableFuture<VedaResult> executePreparedAsync(String name, String... params) {
-        return supplyAsync(() -> syncClient.executePrepared(name, params));
+        return supplyAsync(() -> { try { return syncClient.executePrepared(name, params); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Deallocate a prepared statement asynchronously.
      */
     public CompletableFuture<VedaResult> deallocateAsync(String name) {
-        return supplyAsync(() -> syncClient.deallocate(name));
+        return supplyAsync(() -> { try { return syncClient.deallocate(name); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     // --- Cache operations ---
@@ -177,21 +178,21 @@ public class VedaAsyncClient implements AutoCloseable {
      * Set a cache key asynchronously.
      */
     public CompletableFuture<Void> cacheSetAsync(String key, String value, int ttl) {
-        return runAsync(() -> syncClient.cacheSet(key, value, ttl));
+        return runAsync(() -> { try { syncClient.cacheSet(key, value, ttl); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Get a cache key asynchronously.
      */
     public CompletableFuture<String> cacheGetAsync(String key) {
-        return supplyAsync(() -> syncClient.cacheGet(key));
+        return supplyAsync(() -> { try { return syncClient.cacheGet(key); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     /**
      * Delete a cache key asynchronously.
      */
     public CompletableFuture<Void> cacheDelAsync(String key) {
-        return runAsync(() -> syncClient.cacheDel(key));
+        return runAsync(() -> { try { syncClient.cacheDel(key); } catch (Exception e) { throw new CompletionException(e); } });
     }
 
     // --- Internal helpers ---
@@ -233,4 +234,17 @@ public class VedaAsyncClient implements AutoCloseable {
         executor.shutdownNow();
         syncClient.close();
     }
+
+    /**
+     * Wrap a checked-exception supplier for use in CompletableFuture.supplyAsync.
+     * Re-throws as CompletionException so the future fails with the original cause.
+     */
+    private static <T> java.util.function.Supplier<T> wrap(java.util.function.Supplier<T> s) {
+        return () -> { try { return s.get(); } catch (Exception e) { throw new CompletionException(e); } };
+    }
+
+    private static Runnable wrapRunnable(Runnable r) {
+        return () -> { try { r.run(); } catch (Exception e) { throw new CompletionException(e); } };
+    }
+
 }

@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * }
  * }</pre>
  */
-public class VedaChangeStream implements AutoCloseable, Iterable<VedaChangeEvent>, Iterator<VedaChangeEvent> {
+public class VedaChangeStream implements AutoCloseable, Iterable<VedaChangeStream.VedaChangeEvent>, Iterator<VedaChangeStream.VedaChangeEvent> {
 
     /**
      * Represents a single database change event.
