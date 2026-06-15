@@ -96,3 +96,8 @@ module VedaDB
     URI.build(config)
   end
 end
+
+# Additive: VBP v1 binary transport (POC; opt-in via require_relative or require).
+# See ruby/lib/veyardb/wire/vbp/ for the 13 files. 23 mandatory opcodes, 38 type IDs, streaming fix.
+# Not loaded by default to avoid loading TCP code unless explicitly requested.
+# require_relative "veyardb/wire/vbp/connection"
