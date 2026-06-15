@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace VedaDB\Wire\Vbp;
 
+use VedaDB\Wire\Vbp\VBPOpcodes as Ops;
+
 /**
  * VBP v1 conformance runner (port of the Python conformance_runner.py).
  *
@@ -598,8 +600,8 @@ final class VBPConformanceRunner
                 $name, $class, $time,
             );
             if ($r['status'] === 'failed') {
-                $msg = htmlspecialchars($r['message'] ?? '', ENT_XML1);
-                $cls = htmlspecialchars($r['exception'] ?? 'AssertionError', ENT_XML1);
+                $msg = htmlspecialchars($r['message'] ?? '', ENT_XML1 | ENT_QUOTES);
+                $cls = htmlspecialchars($r['exception'] ?? 'AssertionError', ENT_XML1 | ENT_QUOTES);
                 $lines[] = sprintf(
                     '    <failure type="%s" message="%s"></failure>',
                     $cls, $msg,
