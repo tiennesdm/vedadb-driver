@@ -19,10 +19,16 @@
     },
     "autoload": {
         "psr-4": {
-            "VedaDB\\": "src/"
+            "VedaDB\\": "src/",
+            "VedaDB\\Wire\\Vbp\\": "src/VedaDB/Wire/Vbp/"
         },
         "files": [
-            "src/VedaException.php"
+            "src/VedaException.php",
+            "src/VedaDB/Wire/Vbp/VBPProtocolError.php",
+            "src/VedaDB/Wire/Vbp/VBPProtocolException.php",
+            "src/VedaDB/Wire/Vbp/VBPException.php",
+            "src/VedaDB/Wire/Vbp/VBPError.php",
+            "src/VedaDB/Wire/Vbp/VBPScramState.php"
         ]
     },
     "autoload-dev": {
