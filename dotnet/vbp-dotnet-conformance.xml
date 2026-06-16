@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="auth" tests="8" failures="0" skipped="0" errors="0" time="0.018">
+    <testcase classname="vbp-conformance-v1" name="1020 auth_no_auth_dev_mode" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1021 auth_plain_success" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1022 auth_plain_wrong_password" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1023 auth_scram_sha256_roundtrip" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1024 auth_scram_sha256_bad_proof" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1025 auth_token_single_use" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1026 auth_response_wrong_mechanism" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1027 auth_request_after_auth_ok" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="connect" tests="5" failures="0" skipped="0" errors="0" time="0.020">
+    <testcase classname="vbp-conformance-v1" name="1001 connect_plain_tcp" time="0.012">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1002 connect_bad_magic_closes" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1003 connect_payload_too_small" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1004 connect_truncated_frame" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1005 connect_seq_wrap" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="hello" tests="5" failures="0" skipped="0" errors="0" time="0.013">
+    <testcase classname="vbp-conformance-v1" name="1010 hello_client_hello_v1" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1011 hello_wrong_protocol_version" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1012 hello_with_actor_kind_service" time="0.002">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1013 hello_with_long_username" time="0.004">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1014 hello_announces_caps" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="query" tests="10" failures="0" skipped="0" errors="0" time="0.034">
+    <testcase classname="vbp-conformance-v1" name="1030 query_select_one" time="0.005">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1031 query_with_int_param" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1032 query_with_text_param" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1033 query_with_null_param" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1034 query_with_bool_param" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1035 query_with_float8_param" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1036 query_with_bytea_param" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1037 query_syntax_error" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1038 query_duplicate_key" time="0.003">
+    </testcase>
+    <testcase classname="vbp-conformance-v1" name="1039 query_many_params" time="0.003">
+    </testcase>
+  </testsuite>
+</testsuites>

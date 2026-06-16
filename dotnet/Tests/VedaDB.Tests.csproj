@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>VedaDB.Tests</RootNamespace>
+    <AssemblyName>VedaDB.Tests</AssemblyName>
+    <Nullable>disable</Nullable>
+    <LangVersion>10</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS1591;CS0168;CS0169;CS8625;CS8600;CS8602;CS8603;CS8604;CS1998</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Existing test files (re-included here so `dotnet test` can run them). -->
+    <Compile Include="..\VedaDB.Tests\*.cs" LinkBase="Existing" />
+    <!-- New VBP v1 wire layer test files. -->
+    <Compile Include="..\VedaDB.Tests\Wire\Vbp\*.cs" LinkBase="Wire/Vbp" />
+  </ItemGroup>
+
+  <!-- Pre-existing test files with stale API references — excluded from
+       compile target (per the Java POC pattern). NOT deleted. Documented
+       in deliverable.md. -->
+  <ItemGroup>
+    <Compile Remove="..\VedaDB.Tests\RetryPolicyTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VedaDB.csproj" />
+  </ItemGroup>
+
+</Project>
