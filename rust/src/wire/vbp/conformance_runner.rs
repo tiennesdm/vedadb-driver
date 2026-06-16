@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
-use super::connection::{VBPConnection, VBPConnectionError};
+use super::connection::{decode_rows, VBPConnection, VBPConnectionError};
 
 #[derive(Debug, Error)]
 pub enum ConformanceError {

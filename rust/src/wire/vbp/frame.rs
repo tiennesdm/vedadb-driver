@@ -225,6 +225,8 @@ pub fn read_frame_bytes(data: &[u8]) -> Result<(Frame, usize), VBPProtocolError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire::vbp::{OP_AUTH_OK, OP_AUTH_RESPONSE, OP_PING};
+    use std::io::Cursor;
 
     #[test]
     fn round_trip_empty_body() {
