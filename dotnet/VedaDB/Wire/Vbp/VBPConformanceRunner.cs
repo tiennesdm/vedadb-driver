@@ -19,6 +19,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -114,6 +116,27 @@ namespace VedaDB.Wire.Vbp
                     }
                     outcomes.Add(o);
                 }
+                // V2 STREAMING FIX: always append the multiplexer multichunk
+                // hidden test (id=9999) after the YAML-driven tests. This
+                // verifies the multiplexer delivers all frames in a
+                // multi-DATA_CHUNK response. Mirrors the PHP POC.
+                if (cats == null || cats.Contains("streaming"))
+                {
+                    var sw = Stopwatch.StartNew();
+                    try
+                    {
+                        var o = RunMultiChunkTest(host, port, user, pw);
+                        // Rebuild the outcome with the measured duration.
+                        outcomes.Add(new Outcome(o.Id, o.Name, o.Category, o.Status,
+                            o.Message, sw.Elapsed.TotalMilliseconds));
+                    }
+                    catch (Exception e)
+                    {
+                        outcomes.Add(new Outcome(9999,
+                            "multiplexer_streaming_multichunk", "streaming", "ERROR",
+                            e.GetType().Name + ": " + e.Message, sw.Elapsed.TotalMilliseconds));
+                    }
+                }
             }
             finally
             {
@@ -195,6 +218,165 @@ namespace VedaDB.Wire.Vbp
             catch (Exception e)
             {
                 return new Outcome(id, name, cat, "FAIL", "query failed: " + e.Message, sw.Elapsed.TotalMilliseconds);
+            }
+        }
+
+        // ============================================================
+        // V2 STREAMING FIX: the multichunk hidden test
+        // ============================================================
+        // This is the canonical regression test for the DATA_CHUNK
+        // accumulation bug. It binds a local TCP listener, accepts a
+        // single connection, reads one client frame, then writes back
+        // 5 DATA_CHUNK frames + 1 ROWS_FINISHED + 1 COMMAND_COMPLETE
+        // in a single TCP flush. The VBPMultiplexer must accumulate
+        // all 7 frames into a single VBPReply with Frames.Count == 7.
+
+        private static Outcome RunMultiChunkTest(string host, int port, string user, string pw)
+        {
+            // We don't actually need a connection to the real VBP server
+            // for this test — we use a local listener and feed it frames
+            // directly. The host/port/user/pw params are accepted for
+            // signature parity with the other Handle* methods.
+            var listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            int localPort = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            try
+            {
+                // Start a background server that accepts one client, reads
+                // one frame, then writes 5 DATA_CHUNKs + ROWS_FINISHED +
+                // COMMAND_COMPLETE all in one big flush.
+                var serverDone = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var server = await listener.AcceptTcpClientAsync();
+                        var s = server.GetStream();
+                        // Read the client's request frame so the OS buffer
+                        // doesn't back up.
+                        var hdr = new byte[VBPFrame.HdrLen];
+                        int got = 0;
+                        while (got < hdr.Length)
+                        {
+                            int n = await s.ReadAsync(hdr, got, hdr.Length - got);
+                            if (n == 0) return;
+                            got += n;
+                        }
+                        int pl = BitConverter.ToInt32(hdr, 3);
+                        var opflags = new byte[VBPFrame.OpFlagsLen];
+                        got = 0;
+                        while (got < opflags.Length)
+                        {
+                            int n = await s.ReadAsync(opflags, got, opflags.Length - got);
+                            if (n == 0) return;
+                            got += n;
+                        }
+                        int bodyLen = pl - VBPFrame.OpFlagsLen;
+                        var bodyBuf = new byte[bodyLen];
+                        got = 0;
+                        while (got < bodyLen)
+                        {
+                            int n = await s.ReadAsync(bodyBuf, got, bodyLen - got);
+                            if (n == 0) return;
+                            got += n;
+                        }
+                        byte seq = hdr[7];
+                        // Build a single buffer with 5 DATA_CHUNKs + 1
+                        // ROWS_FINISHED + 1 COMMAND_COMPLETE, then flush.
+                        var ms = new MemoryStream();
+                        for (int i = 0; i < 5; i++)
+                        {
+                            var chunk = new VBPFrame(seq, VBPOpcodes.DataChunk, 0,
+                                System.Text.Encoding.UTF8.GetBytes("chunk-" + i));
+                            var b = chunk.Encode();
+                            ms.Write(b, 0, b.Length);
+                        }
+                        var rowsFin = new VBPFrame(seq, VBPOpcodes.RowsFinished, 0,
+                            System.Text.Encoding.UTF8.GetBytes("rows-affected=5"));
+                        var rfb = rowsFin.Encode();
+                        ms.Write(rfb, 0, rfb.Length);
+                        var cc = new VBPFrame(seq, VBPOpcodes.CommandComplete, 0,
+                            System.Text.Encoding.UTF8.GetBytes("SELECT 5"));
+                        var ccb = cc.Encode();
+                        ms.Write(ccb, 0, ccb.Length);
+                        ms.Position = 0;
+                        var all = ms.ToArray();
+                        await s.WriteAsync(all, 0, all.Length);
+                        await s.FlushAsync();
+                        serverDone.TrySetResult(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        serverDone.TrySetException(ex);
+                    }
+                });
+
+                // Now connect a fresh VBPMultiplexer to our local listener
+                // and call Query. The mux should accumulate all 7 frames.
+                using var mux = new VBPMultiplexer("127.0.0.1", localPort, 5000);
+                var reply = mux.Call(VBPOpcodes.Query,
+                    System.Text.Encoding.UTF8.GetBytes("SELECT 1"));
+                if (reply.Frames.Count != 7)
+                {
+                    return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                        "FAIL",
+                        $"expected 7 frames, got {reply.Frames.Count}",
+                        0);
+                }
+                if (reply.Op != VBPOpcodes.CommandComplete)
+                {
+                    return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                        "FAIL",
+                        "expected COMMAND_COMPLETE as terminal, got " +
+                        VBPOpcodes.OpcodeName(reply.Op),
+                        0);
+                }
+                // Verify the 5 DATA_CHUNKs are in order with the right bodies.
+                for (int i = 0; i < 5; i++)
+                {
+                    if (reply.Frames[i].Op != VBPOpcodes.DataChunk)
+                    {
+                        return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                            "FAIL",
+                            $"frame[{i}]: expected DATA_CHUNK, got " +
+                            VBPOpcodes.OpcodeName(reply.Frames[i].Op),
+                            0);
+                    }
+                    var body = System.Text.Encoding.UTF8.GetString(reply.Frames[i].Body);
+                    if (body != "chunk-" + i)
+                    {
+                        return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                            "FAIL",
+                            $"frame[{i}] body: expected 'chunk-{i}', got '{body}'",
+                            0);
+                    }
+                }
+                if (reply.Frames[5].Op != VBPOpcodes.RowsFinished)
+                {
+                    return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                        "FAIL",
+                        "frame[5]: expected ROWS_FINISHED, got " +
+                        VBPOpcodes.OpcodeName(reply.Frames[5].Op),
+                        0);
+                }
+                if (reply.Frames[6].Op != VBPOpcodes.CommandComplete)
+                {
+                    return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                        "FAIL",
+                        "frame[6]: expected COMMAND_COMPLETE, got " +
+                        VBPOpcodes.OpcodeName(reply.Frames[6].Op),
+                        0);
+                }
+                // Wait for the server task to complete.
+                serverDone.Task.Wait(2000);
+                return new Outcome(9999, "multiplexer_streaming_multichunk", "streaming",
+                    "PASS",
+                    $"multichunk ok: 5 DATA_CHUNKs + ROWS_FINISHED + COMMAND_COMPLETE",
+                    0);
+            }
+            finally
+            {
+                try { listener.Stop(); } catch { }
             }
         }
 

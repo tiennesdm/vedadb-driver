@@ -8,9 +8,20 @@
 // frames in one TCP flush (e.g. SERVER_READY + AUTH_OK in dev mode), the
 // multiplexer releases the latch on the first terminal frame and ignores
 // subsequent terminal frames for the same in-flight request.
+//
+// V2 STREAMING FIX (2026-06-15): the reader now distinguishes TERMINAL from
+// NON-TERMINAL opcodes. Non-terminal frames (DATA_CHUNK 0x0A, STREAM_CHUNK
+// 0x19) are ACCUMULATED into the inflight slot's Frames list; the slot is
+// released and the latch is signalled only when a TERMINAL opcode arrives
+// (ROWS_FINISHED 0x0B, COMMAND_COMPLETE 0x0C, ERROR 0x0D, plus the rest of
+// VBPOpcodes.IsTerminal). The returned VBPReply.Frames contains every
+// received frame in order, including the terminal; VBPReply.Op/Body/Seq
+// proxy to the terminal frame for backward compatibility with callers that
+// only need the single-reply shape (CLIENT_HELLO, AUTH_RESPONSE, PING, etc.).
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading;
@@ -53,10 +64,13 @@ namespace VedaDB.Wire.Vbp
             _readerTask = Task.Run(ReadLoop);
         }
 
-        /// <summary>Send a request and wait for the reply. Uses default 30s timeout.</summary>
-        public VBPFrame Call(byte op, byte[] body) => Call(op, body, 0, 30_000);
+        /// <summary>Send a request and wait for the reply. Uses default 30s timeout.
+        /// Returns the terminal frame in the VBPReply; for queries that emit
+        /// DATA_CHUNKs, the VBPReply.Frames list contains every frame in order.
+        /// </summary>
+        public VBPReply Call(byte op, byte[] body) => Call(op, body, 0, 30_000);
 
-        public VBPFrame Call(byte op, byte[] body, byte flags, int timeoutMs)
+        public VBPReply Call(byte op, byte[] body, byte flags, int timeoutMs)
         {
             byte seq;
             Inflight inf;
@@ -103,16 +117,33 @@ namespace VedaDB.Wire.Vbp
                 _inflight.TryRemove(seq, out _);
                 throw new VBPProtocolException(VBPProtocolError.Interrupted, $"interrupted waiting for seq={seq}");
             }
-            var reply = inf.Reply;
-            _inflight.TryRemove(seq, out _);
-            if (reply == null)
-                throw new VBPConnectionClosedException("connection closed mid-call");
-            if (reply.Op == VBPOpcodes.Error)
+            // The reader has already populated inf.Frames and signalled the
+            // latch. Take a stable snapshot of the frames list and remove
+            // the inflight slot under the seq lock to avoid racing the reader.
+            List<VBPFrame> frames;
+            lock (inf.Lock)
             {
-                var err = VBPTypeCodec.ParseErrorBody(reply.Body);
+                // Mark the slot as taken BEFORE removing it from the dict
+                // and BEFORE releasing the lock. The reader checks `Taken`
+                // under the same lock and will refuse to append any further
+                // frames. This prevents a late DATA_CHUNK from leaking into
+                // the reply's frames list after Call has decided to return.
+                inf.Taken = true;
+                frames = inf.Frames;
+            }
+            _inflight.TryRemove(seq, out _);
+            if (frames == null || frames.Count == 0)
+                throw new VBPConnectionClosedException("connection closed mid-call");
+            // Terminal frame is the last element (the one whose dispatch marked
+            // the slot terminal). For pre-streaming calls (no DATA_CHUNKs)
+            // frames.Count == 1 and terminal == frames[0].
+            var terminal = frames[frames.Count - 1];
+            if (terminal.Op == VBPOpcodes.Error)
+            {
+                var err = VBPTypeCodec.ParseErrorBody(terminal.Body);
                 throw new VBPErrorException(err.SqlState, err.Message, err.Detail, err.Hint);
             }
-            return reply;
+            return new VBPReply(frames);
         }
 
         private void ReadLoop()
@@ -123,21 +154,56 @@ namespace VedaDB.Wire.Vbp
                 {
                     var f = ReadOne();
                     if (f == null) break;
-                    if (_inflight.TryGetValue(f.Seq, out var inf))
+                    if (!_inflight.TryGetValue(f.Seq, out var inf))
                     {
-                        // "First terminal wins": only count down + set reply once
-                        // so unsolicited follow-up frames (e.g. AUTH_OK after
-                        // SERVER_READY in dev mode) don't overwrite.
+                        // Late frame for a slot we already released. Drop silently.
+                        continue;
+                    }
+                    lock (inf.Lock)
+                    {
+                        // If the caller has already taken ownership of this
+                        // slot (Call returned), drop the frame. This catches
+                        // late frames for a slot we already released —
+                        // without this guard a stray DATA_CHUNK after
+                        // SERVER_READY would leak into the just-returned
+                        // VBPReply.Frames list.
+                        if (inf.Taken) continue;
+                        // *** V2 STREAMING FIX ***
+                        // Frame dispatch rules (taken under inf.Lock):
+                        //
+                        // 1. NON-TERMINAL (DATA_CHUNK, STREAM_CHUNK,
+                        //    AUTH_CHALLENGE) and TerminalSeen is false →
+                        //    accumulate into inf.Frames.
+                        // 2. NON-TERMINAL and TerminalSeen is true → drop
+                        //    silently. This is the late-DATA_CHUNK case:
+                        //    a server that sent a stray chunk after the
+                        //    terminal frame. The first terminal has already
+                        //    woken up the caller; we don't want late chunks
+                        //    leaking into the just-returned reply.
+                        // 3. TERMINAL → always accumulate (so streaming
+                        //    responses that end with both ROWS_FINISHED
+                        //    and COMMAND_COMPLETE deliver both), and signal
+                        //    the latch if not yet signalled. Mark
+                        //    TerminalSeen=true so rule 2 fires for any
+                        //    later DATA_CHUNK.
                         if (VBPOpcodes.IsTerminal(f.Op))
                         {
+                            inf.Frames.Add(f);
+                            inf.TerminalSeen = true;
                             if (inf.Latch.CurrentCount > 0)
                             {
-                                inf.Reply = f;
                                 inf.Latch.Signal();
                             }
                         }
-                        // Non-terminal streaming frames (DATA_CHUNK) are ignored
-                        // for v1 POC — query returns the FIRST terminal frame.
+                        else
+                        {
+                            if (inf.TerminalSeen)
+                            {
+                                // Stray non-terminal after terminal — drop.
+                                continue;
+                            }
+                            inf.Frames.Add(f);
+                        }
                     }
                 }
             }
@@ -218,7 +284,18 @@ namespace VedaDB.Wire.Vbp
         private sealed class Inflight
         {
             public CountdownLatch Latch { get; } = new CountdownLatch(1);
-            public VBPFrame? Reply { get; set; }
+            public readonly object Lock = new object();
+            public readonly List<VBPFrame> Frames = new List<VBPFrame>(4);
+            /// <summary>Set true by the reader when the first terminal
+            /// frame for this seq is dispatched. Any non-terminal frame
+            /// that arrives AFTER TerminalSeen is true is dropped — this
+            /// is the late-DATA_CHUNK case.</summary>
+            public bool TerminalSeen;
+            /// <summary>Set true by Call() after it takes a stable snapshot
+            /// of Frames. The reader checks this under Lock and drops any
+            /// subsequent frame for this slot, preventing late frames from
+            /// leaking into an already-returned reply.</summary>
+            public bool Taken;
         }
 
         /// <summary>Minimal CountDownLatch equivalent for .NET.</summary>
