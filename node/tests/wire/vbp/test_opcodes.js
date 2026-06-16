@@ -8,7 +8,7 @@ const {
   OP_COMMAND_COMPLETE, OP_ERROR, OP_BEGIN, OP_COMMIT, OP_ROLLBACK,
   OP_COPY_IN, OP_COPY_DONE, OP_COPY_FAIL, OP_CANCEL_QUERY,
   OP_PING, OP_PONG, OP_CLOSE,
-  MANDATORY_OPCODES, OPCODE_NAMES, opcodeName,
+  MANDATORY_OPCODES, TERMINAL_OPCODES, isTerminal, OPCODE_NAMES, opcodeName,
   T_BOOL, T_INT2, T_INT4, T_INT8, T_FLOAT4, T_FLOAT8,
   T_TEXT, T_VARCHAR, T_BYTEA, T_UUID, T_DATE, T_TIME, T_TIMESTAMP,
   T_TIMESTAMPTZ, T_INTERVAL, T_NUMERIC, T_MONEY,
@@ -113,5 +113,41 @@ test('opcodes: TYPE_IDS is frozen', () => {
 test('opcodes: TYPE_ID_NAMES is complete', () => {
   for (const tid of TYPE_IDS) {
     assert.ok(TYPE_ID_NAMES[tid], `type ${tid} missing name`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Terminal-opcode classification (the team-engine's v2 multichunk fix)
+// ---------------------------------------------------------------------------
+
+test('opcodes [streaming fix]: TERMINAL_OPCODES is frozen', () => {
+  assert.ok(Object.isFrozen(TERMINAL_OPCODES));
+});
+
+test('opcodes [streaming fix]: terminal opcodes — ROWS_FINISHED, COMMAND_COMPLETE, ERROR, SERVER_READY, AUTH_OK, AUTH_CHALLENGE, PONG, CLOSE', () => {
+  for (const op of [
+    OP_ROWS_FINISHED, OP_COMMAND_COMPLETE, OP_ERROR,
+    OP_SERVER_READY, OP_AUTH_OK, OP_AUTH_CHALLENGE,
+    OP_PONG, OP_CLOSE,
+  ]) {
+    assert.ok(isTerminal(op), `0x${op.toString(16)} should be terminal`);
+  }
+});
+
+test('opcodes [streaming fix]: non-terminal opcodes — DATA_CHUNK, AUTH_RESPONSE, BEGIN, COMMIT, ROLLBACK, COPY_*, PING, CLIENT_HELLO, QUERY, EXT_QUERY, PARSE, BIND, CANCEL_QUERY', () => {
+  for (const op of [
+    OP_DATA_CHUNK, OP_AUTH_RESPONSE, OP_BEGIN, OP_COMMIT, OP_ROLLBACK,
+    OP_COPY_IN, OP_COPY_DONE, OP_COPY_FAIL, OP_CANCEL_QUERY,
+    OP_PING, OP_CLIENT_HELLO,
+    OP_QUERY, OP_EXT_QUERY, OP_PARSE, OP_BIND,
+  ]) {
+    assert.ok(!isTerminal(op), `0x${op.toString(16)} should NOT be terminal`);
+  }
+});
+
+test('opcodes [streaming fix]: unknown opcode byte is non-terminal', () => {
+  // 0x00 is reserved, 0x15 is reserved, 0xFE is unknown — none are terminal.
+  for (const op of [0x00, 0x15, 0xFE, 0xFF]) {
+    assert.ok(!isTerminal(op), `0x${op.toString(16)} should NOT be terminal`);
   }
 });
