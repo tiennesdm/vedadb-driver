@@ -44,6 +44,7 @@ from .frame import (
     read_frame,
     write_frame,
 )
+from . import opcodes as Ops
 
 logger = logging.getLogger("vedadb.wire.vbp.multiplexer")
 
@@ -82,6 +83,32 @@ class Multiplexer:
     # exhausted (all 256 in flight). v1 clients should normally never
     # hit this; if they do, we sleep briefly and retry.
     _SEQ_ALLOC_POLL = 0.001
+
+    # Opcodes that END a response stream.  When one of these arrives
+    # for a given seq, ``call()`` wakes the waiter and returns the
+    # accumulated frames.
+    #
+    # *** THE STREAMING FIX (v2) ***
+    # DATA_CHUNK (0x0A) and STREAM_CHUNK (0x19) are NON-terminal: the
+    # server may send many of them in one response.  We MUST accumulate
+    # them into the per-seq bucket and NOT signal completion.  The
+    # first terminal opcode (ROWS_FINISHED, COMMAND_COMPLETE, ERROR,
+    # ...) wakes the waiter.
+    #
+    # SERVER_READY (0x02) is NOT terminal here even though it is the
+    # "end" of the SERVER_READY frame — the handshake typically
+    # continues with AUTH_OK (PLAIN) or AUTH_CHALLENGE (SCRAM), so
+    # we wait for the second handshake frame before returning.
+    _TERMINAL_OPCODES: frozenset[int] = frozenset({
+        Ops.OP_ROWS_FINISHED,        # 0x0B — last data frame
+        Ops.OP_COMMAND_COMPLETE,      # 0x0C — response complete
+        Ops.OP_ERROR,                 # 0x0D — error
+        Ops.OP_AUTH_OK,               # 0x05 — handshake terminal (PLAIN)
+        Ops.OP_AUTH_CHALLENGE,        # 0x03 — handshake terminal (SCRAM server-first)
+        Ops.OP_PONG,                  # 0x17 — ping reply
+        Ops.OP_STREAM_END,            # 0x1A — stream end
+        Ops.OP_CLOSE,                 # 0x18 — server-initiated close
+    })
 
     def __init__(self, sock: socket.socket, on_close: Optional[Callable[[], None]] = None):
         self._sock = sock
@@ -441,14 +468,28 @@ class Multiplexer:
         return b"".join(chunks)
 
     def _dispatch_frame(self, frame: Frame) -> None:
-        """Route a frame to its waiter (or to the stream callback)."""
+        """Route a frame to its waiter (or to the stream callback).
+
+        *** THE STREAMING FIX (v2) ***
+        DATA_CHUNK and STREAM_CHUNK are NON-terminal: we ACCUMULATE
+        them into the per-seq bucket and do NOT wake the waiter.
+        ROWS_FINISHED, COMMAND_COMPLETE, ERROR, and the other
+        ``_TERMINAL_OPCODES`` are TERMINAL: we append the frame and
+        wake the waiter so ``call()`` returns the accumulated
+        frames list.
+
+        Without this distinction, a server that returns N>1
+        DATA_CHUNKs for one query would have the first chunk alone
+        consumed the inflight slot, dropping the remaining chunks
+        on the floor.
+        """
         seq = frame.seq
         with self._lock:
             # Streaming callback takes priority.
             cb = self._stream_cb.get(seq)
             if cb is not None:
                 cb(frame)
-                if frame.op in (0x0C, 0x0B, 0x1A, 0x0D):
+                if frame.op in self._TERMINAL_OPCODES:
                     # Terminal frame — release the seq.
                     ev = self._events.get(seq)
                     if ev is not None:
@@ -458,23 +499,11 @@ class Multiplexer:
             if bucket is None:
                 # Spurious frame for an unknown seq — drop it.
                 return
+            # Accumulate EVERY frame (terminal or not) so the caller
+            # gets the full ordered list.
             bucket.append(frame)
-            # Set the waiter's event for any of the "response terminal"
-            # opcodes.  SERVER_READY is NOT terminal because the handshake
-            # typically continues with AUTH_OK (or AUTH_CHALLENGE for
-            # SCRAM).  Callers that just want the SERVER_READY can use
-            # the streaming API.  Note: ROWS_FINISHED is *not* terminal
-            # for QUERY because the server always emits COMMAND_COMPLETE
-            # after it; we wait for CC to know the response is complete.
-            if frame.op in (
-                0x0D,  # ERROR
-                0x0C,  # COMMAND_COMPLETE
-                0x1A,  # STREAM_END
-                0x05,  # AUTH_OK (handshake terminal)
-                0x03,  # AUTH_CHALLENGE (SCRAM server-first)
-                0x17,  # PONG
-            ):
-                if frame.op == 0x0D:
+            if frame.op in self._TERMINAL_OPCODES:
+                if frame.op == Ops.OP_ERROR:
                     # Remember the ERROR frame so call() can raise VBPError.
                     self._errors[seq] = frame
                 ev = self._events.get(seq)
